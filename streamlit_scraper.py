@@ -42,18 +42,64 @@ class WebScraper:
                     else:
                         data[key] = [elem.get_text(strip=True) for elem in elements]
         else:
+            # Extract title-content pairs in order
+            title_content_pairs = []
+            
+            # Get main title as first title
+            main_title = soup.title.string.strip() if soup.title else ''
+            if main_title:
+                title_content_pairs.append({'title': main_title, 'content': ''})
+            
+            # Find all headings and their following content
+            headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            
+            for i, heading in enumerate(headings):
+                title = heading.get_text(strip=True)
+                if not title:
+                    continue
+                
+                # Get content after this heading until next heading
+                content_parts = []
+                next_element = heading.next_sibling
+                
+                while next_element:
+                    # Stop if we hit another heading
+                    if next_element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                        break
+                    
+                    # Extract text from this element
+                    if next_element.name == 'p':
+                        text = next_element.get_text(strip=True)
+                        if text and len(text) > 10:
+                            content_parts.append(text)
+                    elif next_element.name in ['div', 'section', 'article']:
+                        text = next_element.get_text(strip=True)
+                        if text and len(text) > 20:
+                            content_parts.append(text)
+                    elif hasattr(next_element, 'get_text'):
+                        text = next_element.get_text(strip=True)
+                        if text and len(text) > 10:
+                            content_parts.append(text)
+                    
+                    next_element = next_element.next_sibling
+                
+                content = ' '.join(content_parts)
+                title_content_pairs.append({'title': title, 'content': content})
+            
+            # If no headings found, get all paragraphs as content with main title
+            if not headings and main_title:
+                paragraphs = soup.find_all('p')
+                content_parts = []
+                for p in paragraphs:
+                    text = p.get_text(strip=True)
+                    if text and len(text) > 10:
+                        content_parts.append(text)
+                
+                if content_parts:
+                    title_content_pairs[0]['content'] = ' '.join(content_parts)
+            
             data = {
-                'title': soup.title.string.strip() if soup.title else '',
-                'headings': {
-                    'h1': [h.get_text(strip=True) for h in soup.find_all('h1')],
-                    'h2': [h.get_text(strip=True) for h in soup.find_all('h2')],
-                    'h3': [h.get_text(strip=True) for h in soup.find_all('h3')]
-                },
-                'paragraphs': [p.get_text(strip=True) for p in soup.find_all('p')],
-                'links': [{'text': a.get_text(strip=True), 'href': a.get('href')} for a in soup.find_all('a', href=True)],
-                'images': [{'src': img.get('src'), 'alt': img.get('alt', '')} for img in soup.find_all('img', src=True)],
-                'meta_description': soup.find('meta', attrs={'name': 'description'}).get('content', '') if soup.find('meta', attrs={'name': 'description'}) else '',
-                'text_content': soup.get_text(strip=True, separator=' ')
+                'title_content_pairs': title_content_pairs
             }
         
         return data
@@ -76,25 +122,15 @@ class WebScraper:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scraped Content Report - {data.get('title', 'Unknown')}</title>
+    <title>Scraped Content Report</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }}
         .header {{ background: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
-        .section {{ margin: 20px 0; padding: 15px; border-left: 4px solid #007cba; background: #f9f9f9; }}
+        .section {{ margin: 20px 0; padding: 15px; border-left: 4px solid #007cba; background: #f9f9f; }}
         .section h2 {{ color: #007cba; margin-top: 0; }}
-        .headings {{ margin: 10px 0; }}
-        .heading-level {{ margin: 10px 0; }}
-        .heading-level h4 {{ margin: 5px 0; color: #333; }}
-        .heading-list {{ list-style: none; padding: 0; }}
-        .heading-list li {{ background: #e9e9e9; margin: 5px 0; padding: 8px; border-radius: 3px; }}
-        .paragraphs {{ margin: 10px 0; }}
-        .paragraph {{ background: #f0f8ff; padding: 10px; margin: 5px 0; border-radius: 3px; border-left: 3px solid #007cba; }}
-        .links {{ margin: 10px 0; }}
-        .link {{ display: block; margin: 5px 0; padding: 8px; background: #e8f5e8; border-radius: 3px; }}
-        .link a {{ text-decoration: none; color: #007cba; }}
-        .link a:hover {{ text-decoration: underline; }}
-        .images {{ margin: 10px 0; }}
-        .image {{ margin: 5px 0; padding: 8px; background: #fff5e6; border-radius: 3px; }}
+        .title-content-pair {{ margin: 20px 0; border: 1px solid #ddd; border-radius: 5px; overflow: hidden; }}
+        .title {{ background: #007cba; color: white; padding: 15px; font-weight: bold; font-size: 18px; }}
+        .content {{ background: #f0f8ff; padding: 15px; }}
         .meta-info {{ background: #f0f0f0; padding: 10px; border-radius: 3px; margin: 10px 0; }}
         .stats {{ display: flex; gap: 20px; margin: 10px 0; flex-wrap: wrap; }}
         .stat {{ background: #007cba; color: white; padding: 10px; border-radius: 3px; text-align: center; min-width: 80px; }}
@@ -106,86 +142,34 @@ class WebScraper:
         <div class="meta-info">
             <p><strong>URL:</strong> <a href="{data.get('scraped_url', '#')}" target="_blank">{data.get('scraped_url', 'Unknown')}</a></p>
             <p><strong>Scraped at:</strong> {data.get('scraped_at', 'Unknown')}</p>
-            <p><strong>Title:</strong> {data.get('title', 'No title found')}</p>
         </div>
         <div class="stats">
             <div class="stat">
-                <h3>{len(data.get('headings', {}).get('h1', []))}</h3>
-                <p>H1 Tags</p>
+                <h3>{len(data.get('title_content_pairs', []))}</h3>
+                <p>Title-Content Pairs</p>
             </div>
             <div class="stat">
-                <h3>{len(data.get('headings', {}).get('h2', []))}</h3>
-                <p>H2 Tags</p>
-            </div>
-            <div class="stat">
-                <h3>{len(data.get('paragraphs', []))}</h3>
-                <p>Paragraphs</p>
-            </div>
-            <div class="stat">
-                <h3>{len(data.get('links', []))}</h3>
-                <p>Links</p>
-            </div>
-            <div class="stat">
-                <h3>{len(data.get('images', []))}</h3>
-                <p>Images</p>
+                <h3>{sum(len(pair.get('content', '')) for pair in data.get('title_content_pairs', []))}</h3>
+                <p>Total Characters</p>
             </div>
         </div>
     </div>"""
         
-        # Headings Section
-        if data.get('headings'):
-            html += '<div class="section"><h2>📋 Headings</h2>'
-            for level in ['h1', 'h2', 'h3']:
-                headings = data['headings'].get(level, [])
-                if headings:
-                    html += f'<div class="heading-level"><h4>{level.upper()} Tags ({len(headings)})</h4><ul class="heading-list">'
-                    for heading in headings:
-                        html += f'<li>{heading}</li>'
-                    html += '</ul></div>'
+        # Title-Content Pairs Section
+        if data.get('title_content_pairs'):
+            html += '<div class="section"><h2>📋 Title-Content Pairs</h2>'
+            for i, pair in enumerate(data['title_content_pairs'], 1):
+                title = pair.get('title', '')
+                content = pair.get('content', '')
+                
+                html += f'<div class="title-content-pair">'
+                html += f'<div class="title">{i}. {title}</div>'
+                if content:
+                    html += f'<div class="content">{content}</div>'
+                else:
+                    html += f'<div class="content"><em>No content found for this section</em></div>'
+                html += '</div>'
             html += '</div>'
-        
-        # Paragraphs Section
-        if data.get('paragraphs'):
-            html += '<div class="section"><h2>📝 Paragraphs</h2><div class="paragraphs">'
-            for i, para in enumerate(data['paragraphs'][:10], 1):
-                html += f'<div class="paragraph"><strong>Paragraph {i}:</strong> {para}</div>'
-            if len(data['paragraphs']) > 10:
-                html += f'<p><em>... and {len(data["paragraphs"]) - 10} more paragraphs</em></p>'
-            html += '</div></div>'
-        
-        # Links Section
-        if data.get('links'):
-            html += '<div class="section"><h2>🔗 Links</h2><div class="links">'
-            for link in data['links'][:15]:
-                href = link.get('href', '#')
-                text = link.get('text', 'No text') or 'No text'
-                if href.startswith('/'):
-                    base_url = data.get('scraped_url', '')
-                    if base_url:
-                        href = urljoin(base_url, href)
-                html += f'<div class="link"><a href="{href}" target="_blank">{text}</a> → {href}</div>'
-            if len(data['links']) > 15:
-                html += f'<p><em>... and {len(data["links"]) - 15} more links</em></p>'
-            html += '</div></div>'
-        
-        # Images Section
-        if data.get('images'):
-            html += '<div class="section"><h2>🖼️ Images</h2><div class="images">'
-            for img in data['images'][:10]:
-                src = img.get('src', '')
-                alt = img.get('alt', 'No alt text')
-                if src.startswith('/'):
-                    base_url = data.get('scraped_url', '')
-                    if base_url:
-                        src = urljoin(base_url, src)
-                html += f'<div class="image"><strong>Alt:</strong> {alt}<br><strong>Src:</strong> <a href="{src}" target="_blank">{src}</a></div>'
-            if len(data['images']) > 10:
-                html += f'<p><em>... and {len(data["images"]) - 10} more images</em></p>'
-            html += '</div></div>'
-        
-        # Meta Description
-        if data.get('meta_description'):
-            html += f'<div class="section"><h2>📄 Meta Description</h2><p>{data["meta_description"]}</p></div>'
         
         html += '</body></html>'
         return html
@@ -201,65 +185,34 @@ class WebScraper:
 📊 BASIC INFORMATION
 ────────────────────────────────────────────────────────────────
 URL: {data.get('scraped_url', 'Unknown')}
-Title: {data.get('title', 'No title found')}
 Scraped at: {data.get('scraped_at', 'Unknown')}
-Meta Description: {data.get('meta_description', 'No meta description')}
 
 📈 CONTENT STATISTICS
 ────────────────────────────────────────────────────────────────
-H1 Tags: {len(data.get('headings', {}).get('h1', []))}
-H2 Tags: {len(data.get('headings', {}).get('h2', []))}
-H3 Tags: {len(data.get('headings', {}).get('h3', []))}
-Paragraphs: {len(data.get('paragraphs', []))}
-Links: {len(data.get('links', []))}
-Images: {len(data.get('images', []))}
+Title-Content Pairs: {len(data.get('title_content_pairs', []))}
+Total Characters: {sum(len(pair.get('content', '')) for pair in data.get('title_content_pairs', []))}
 
 """
         
-        # Headings
-        if data.get('headings'):
-            text += "📋 HEADINGS\n────────────────────────────────────────────────────────────────\n"
-            for level in ['h1', 'h2', 'h3']:
-                headings = data['headings'].get(level, [])
-                if headings:
-                    text += f"\n{level.upper()} TAGS ({len(headings)}):\n"
-                    for i, heading in enumerate(headings, 1):
-                        text += f"  {i}. {heading}\n"
-            text += "\n"
+        # Title-Content Pairs
+        if data.get('title_content_pairs'):
+            text += "📋 TITLE-CONTENT PAIRS\n────────────────────────────────────────────────────────────────\n"
+            for i, pair in enumerate(data['title_content_pairs'], 1):
+                title = pair.get('title', '')
+                content = pair.get('content', '')
+                
+                text += f"\n{'='*80}\n"
+                text += f"SECTION {i}\n"
+                text += f"{'='*80}\n"
+                text += f"TITLE: {title}\n"
+                text += f"{'─'*80}\n"
+                if content:
+                    text += f"CONTENT:\n{content}\n"
+                else:
+                    text += f"CONTENT:\nNo content found for this section\n"
+                text += f"\n"
         
-        # Paragraphs
-        if data.get('paragraphs'):
-            text += "📝 PARAGRAPHS\n────────────────────────────────────────────────────────────────\n"
-            for i, para in enumerate(data['paragraphs'][:5], 1):
-                text += f"\nParagraph {i}:\n"
-                text += f"{'─' * 50}\n"
-                text += f"{para}\n"
-            if len(data['paragraphs']) > 5:
-                text += f"\n... and {len(data['paragraphs']) - 5} more paragraphs\n"
-            text += "\n"
-        
-        # Links
-        if data.get('links'):
-            text += "🔗 LINKS\n────────────────────────────────────────────────────────────────\n"
-            for i, link in enumerate(data['links'][:10], 1):
-                href = link.get('href', '#')
-                text_content = link.get('text', 'No text') or 'No text'
-                text += f"{i}. {text_content}\n   → {href}\n"
-            if len(data['links']) > 10:
-                text += f"... and {len(data['links']) - 10} more links\n"
-            text += "\n"
-        
-        # Images
-        if data.get('images'):
-            text += "🖼️ IMAGES\n────────────────────────────────────────────────────────────────\n"
-            for i, img in enumerate(data['images'][:5], 1):
-                src = img.get('src', '')
-                alt = img.get('alt', 'No alt text')
-                text += f"{i}. Alt: {alt}\n   → {src}\n"
-            if len(data['images']) > 5:
-                text += f"... and {len(data['images']) - 5} more images\n"
-        
-        text += "\n╔══════════════════════════════════════════════════════════════╗\n"
+        text += "╔══════════════════════════════════════════════════════════════╗\n"
         text += "║                        END OF REPORT                        ║\n"
         text += "╚══════════════════════════════════════════════════════════════╝\n"
         
@@ -272,37 +225,15 @@ Images: {len(data.get('images', []))}
         xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
         xml += '<scraped_content>\n'
         xml += f'  <url>{data.get("scraped_url", "")}</url>\n'
-        xml += f'  <title>{data.get("title", "")}</title>\n'
         xml += f'  <scraped_at>{data.get("scraped_at", "")}</scraped_at>\n'
-        xml += f'  <meta_description>{data.get("meta_description", "")}</meta_description>\n'
         
-        xml += '  <headings>\n'
-        for level in ['h1', 'h2', 'h3']:
-            headings = data.get('headings', {}).get(level, [])
-            for heading in headings:
-                xml += f'    <{level}>{heading}</{level}>\n'
-        xml += '  </headings>\n'
-        
-        xml += '  <paragraphs>\n'
-        for para in data.get('paragraphs', []):
-            xml += f'    <paragraph>{para}</paragraph>\n'
-        xml += '  </paragraphs>\n'
-        
-        xml += '  <links>\n'
-        for link in data.get('links', []):
-            xml += f'    <link>\n'
-            xml += f'      <text>{link.get("text", "")}</text>\n'
-            xml += f'      <href>{link.get("href", "")}</href>\n'
-            xml += f'    </link>\n'
-        xml += '  </links>\n'
-        
-        xml += '  <images>\n'
-        for img in data.get('images', []):
-            xml += f'    <image>\n'
-            xml += f'      <src>{img.get("src", "")}</src>\n'
-            xml += f'      <alt>{img.get("alt", "")}</alt>\n'
-            xml += f'    </image>\n'
-        xml += '  </images>\n'
+        xml += '  <title_content_pairs>\n'
+        for i, pair in enumerate(data.get('title_content_pairs', []), 1):
+            xml += f'    <pair id="{i}">\n'
+            xml += f'      <title>{pair.get("title", "")}</title>\n'
+            xml += f'      <content>{pair.get("content", "")}</content>\n'
+            xml += f'    </pair>\n'
+        xml += '  </title_content_pairs>\n'
         
         xml += '</scraped_content>\n'
         return xml
@@ -319,28 +250,18 @@ def create_download_buttons(data, timestamp):
         mime="application/json"
     )
     
-    # CSV Download
-    if isinstance(data, dict):
-        # Flatten the data for CSV
-        flattened_data = {}
-        for key, value in data.items():
-            if key == 'headings' and isinstance(value, dict):
-                for level, headings in value.items():
-                    flattened_data[f'{level}_count'] = len(headings)
-                    flattened_data[f'{level}_tags'] = '; '.join(headings[:3])  # First 3 headings
-            elif key == 'paragraphs' and isinstance(value, list):
-                flattened_data['paragraph_count'] = len(value)
-                flattened_data['first_paragraph'] = value[0] if value else ''
-            elif key == 'links' and isinstance(value, list):
-                flattened_data['link_count'] = len(value)
-                flattened_data['first_link'] = f"{value[0].get('text', '')} -> {value[0].get('href', '')}" if value else ''
-            elif key == 'images' and isinstance(value, list):
-                flattened_data['image_count'] = len(value)
-                flattened_data['first_image'] = f"{value[0].get('alt', '')} -> {value[0].get('src', '')}" if value else ''
-            elif not isinstance(value, (dict, list)):
-                flattened_data[key] = value
+    # CSV Download - Create rows for each title-content pair
+    if isinstance(data, dict) and data.get('title_content_pairs'):
+        csv_rows = []
+        for i, pair in enumerate(data['title_content_pairs'], 1):
+            csv_rows.append({
+                'section_number': i,
+                'title': pair.get('title', ''),
+                'content': pair.get('content', ''),
+                'content_length': len(pair.get('content', ''))
+            })
         
-        df = pd.DataFrame([flattened_data])
+        df = pd.DataFrame(csv_rows)
         csv_data = df.to_csv(index=False)
         st.download_button(
             label="📊 Download CSV",
@@ -384,68 +305,35 @@ def display_scraped_data(data):
     
     # Summary Statistics
     st.subheader("📊 Summary Statistics")
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("H1 Tags", len(data.get('headings', {}).get('h1', [])))
+        st.metric("Title-Content Pairs", len(data.get('title_content_pairs', [])))
     with col2:
-        st.metric("H2 Tags", len(data.get('headings', {}).get('h2', [])))
-    with col3:
-        st.metric("Paragraphs", len(data.get('paragraphs', [])))
-    with col4:
-        st.metric("Links", len(data.get('links', [])))
-    with col5:
-        st.metric("Images", len(data.get('images', [])))
+        total_content_length = sum(len(pair.get('content', '')) for pair in data.get('title_content_pairs', []))
+        st.metric("Total Characters", total_content_length)
     
     # Basic Info
     st.subheader("🌍 Basic Information")
     st.info(f"""
     **URL:** {data.get('scraped_url', 'Unknown')}  
-    **Title:** {data.get('title', 'No title found')}  
-    **Scraped at:** {data.get('scraped_at', 'Unknown')}  
-    **Meta Description:** {data.get('meta_description', 'No meta description')}
+    **Scraped at:** {data.get('scraped_at', 'Unknown')}
     """)
     
-    # Headings
-    if data.get('headings'):
-        st.subheader("📋 Headings")
-        for level in ['h1', 'h2', 'h3']:
-            headings = data['headings'].get(level, [])
-            if headings:
-                with st.expander(f"{level.upper()} Tags ({len(headings)})"):
-                    for i, heading in enumerate(headings, 1):
-                        st.write(f"{i}. {heading}")
-    
-    # Paragraphs
-    if data.get('paragraphs'):
-        st.subheader("📝 Paragraphs")
-        with st.expander(f"Paragraphs ({len(data['paragraphs'])})"):
-            for i, para in enumerate(data['paragraphs'][:10], 1):
-                st.write(f"**Paragraph {i}:** {para}")
-            if len(data['paragraphs']) > 10:
-                st.info(f"... and {len(data['paragraphs']) - 10} more paragraphs")
-    
-    # Links
-    if data.get('links'):
-        st.subheader("🔗 Links")
-        with st.expander(f"Links ({len(data['links'])})"):
-            for i, link in enumerate(data['links'][:15], 1):
-                href = link.get('href', '#')
-                text = link.get('text', 'No text') or 'No text'
-                st.write(f"{i}. [{text}]({href})")
-            if len(data['links']) > 15:
-                st.info(f"... and {len(data['links']) - 15} more links")
-    
-    # Images
-    if data.get('images'):
-        st.subheader("🖼️ Images")
-        with st.expander(f"Images ({len(data['images'])})"):
-            for i, img in enumerate(data['images'][:10], 1):
-                src = img.get('src', '')
-                alt = img.get('alt', 'No alt text')
-                st.write(f"{i}. **Alt:** {alt}  \n   **Src:** {src}")
-            if len(data['images']) > 10:
-                st.info(f"... and {len(data['images']) - 10} more images")
+    # Title-Content Pairs
+    if data.get('title_content_pairs'):
+        st.subheader("📋 Title-Content Pairs")
+        
+        for i, pair in enumerate(data['title_content_pairs'], 1):
+            title = pair.get('title', '')
+            content = pair.get('content', '')
+            
+            with st.expander(f"Section {i}: {title[:100]}{'...' if len(title) > 100 else ''}"):
+                st.write(f"**📌 Title:** {title}")
+                if content:
+                    st.write(f"**📝 Content:** {content}")
+                else:
+                    st.write("*No content found for this section*")
 
 def main():
     st.set_page_config(
@@ -539,27 +427,18 @@ def main():
                 )
             
             with col2:
-                # CSV
-                if isinstance(data, dict):
-                    flattened_data = {}
-                    for key, value in data.items():
-                        if key == 'headings' and isinstance(value, dict):
-                            for level, headings in value.items():
-                                flattened_data[f'{level}_count'] = len(headings)
-                                flattened_data[f'{level}_tags'] = '; '.join(headings[:3])
-                        elif key == 'paragraphs' and isinstance(value, list):
-                            flattened_data['paragraph_count'] = len(value)
-                            flattened_data['first_paragraph'] = value[0] if value else ''
-                        elif key == 'links' and isinstance(value, list):
-                            flattened_data['link_count'] = len(value)
-                            flattened_data['first_link'] = f"{value[0].get('text', '')} -> {value[0].get('href', '')}" if value else ''
-                        elif key == 'images' and isinstance(value, list):
-                            flattened_data['image_count'] = len(value)
-                            flattened_data['first_image'] = f"{value[0].get('alt', '')} -> {value[0].get('src', '')}" if value else ''
-                        elif not isinstance(value, (dict, list)):
-                            flattened_data[key] = value
+                # CSV - Create rows for each title-content pair
+                if isinstance(data, dict) and data.get('title_content_pairs'):
+                    csv_rows = []
+                    for i, pair in enumerate(data['title_content_pairs'], 1):
+                        csv_rows.append({
+                            'section_number': i,
+                            'title': pair.get('title', ''),
+                            'content': pair.get('content', ''),
+                            'content_length': len(pair.get('content', ''))
+                        })
                     
-                    df = pd.DataFrame([flattened_data])
+                    df = pd.DataFrame(csv_rows)
                     csv_data = df.to_csv(index=False)
                     st.download_button(
                         label="📊 CSV",
