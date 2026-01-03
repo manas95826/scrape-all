@@ -5,10 +5,12 @@ import time
 import json
 import csv
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import pandas as pd
 from io import StringIO, BytesIO
 import base64
+import re
+from collections import deque
 
 class WebScraper:
     def __init__(self, delay=1):
@@ -112,6 +114,127 @@ class WebScraper:
             data['scraped_at'] = datetime.now().isoformat()
             return data
         return None
+    
+    def extract_links(self, response, base_url):
+        """Extract all links from a page and normalize them"""
+        if not response:
+            return set()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        links = set()
+        
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag.get('href')
+            full_url = urljoin(base_url, href)
+            
+            # Parse and normalize URL
+            parsed = urlparse(full_url)
+            
+            # Only include HTTP/HTTPS links
+            if parsed.scheme not in ['http', 'https']:
+                continue
+            
+            # Remove fragment and query parameters for consistency
+            clean_url = parsed._replace(fragment='', params='', query='').geturl()
+            
+            links.add(clean_url)
+        
+        return links
+    
+    def is_internal_link(self, url, base_domain):
+        """Check if URL belongs to the same domain"""
+        try:
+            parsed_url = urlparse(url)
+            parsed_base = urlparse(base_domain)
+            return parsed_url.netloc == parsed_base.netloc
+        except:
+            return False
+    
+    def should_skip_url(self, url, exclude_patterns=None):
+        """Check if URL should be skipped based on patterns"""
+        if not exclude_patterns:
+            return False
+        
+        for pattern in exclude_patterns:
+            if re.search(pattern, url):
+                return True
+        return False
+    
+    def discover_website_pages(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, exclude_patterns=None, progress_callback=None):
+        """Discover all pages on a website using breadth-first search"""
+        if exclude_patterns is None:
+            exclude_patterns = [r'\.(pdf|jpg|jpeg|png|gif|zip|tar|gz|exe)$', r'#', r'\?']
+        
+        base_domain = urlparse(start_url).netloc
+        visited = set()
+        queue = deque([(start_url, 0)])  # (url, depth)
+        discovered_urls = set()
+        total_processed = 0
+        
+        while queue and len(discovered_urls) < max_pages:
+            current_url, depth = queue.popleft()
+            
+            if current_url in visited or depth > max_depth:
+                continue
+            
+            visited.add(current_url)
+            
+            # Skip URLs based on patterns
+            if self.should_skip_url(current_url, exclude_patterns):
+                continue
+            
+            if progress_callback:
+                progress = min(len(discovered_urls) / max_pages, 0.95)  # Cap at 95% during discovery
+                progress_callback(progress, f"Discovering: {current_url} (depth: {depth}, found: {len(discovered_urls)} pages)")
+            
+            response = self.get_page(current_url)
+            if response:
+                discovered_urls.add(current_url)
+                total_processed += 1
+                
+                # Extract links and add to queue
+                links = self.extract_links(response, current_url)
+                for link in links:
+                    if link not in visited:
+                        # Stay on same domain if required
+                        if stay_on_domain and not self.is_internal_link(link, start_url):
+                            continue
+                        
+                        queue.append((link, depth + 1))
+            
+            # Add delay to be respectful
+            time.sleep(self.delay)
+        
+        return list(discovered_urls)
+    
+    def scrape_entire_website(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, selectors=None, exclude_patterns=None, progress_callback=None):
+        """Scrape entire website starting from a URL"""
+        # Discover all pages first
+        if progress_callback:
+            progress_callback(0.1, "Discovering pages...")
+        
+        urls_to_scrape = self.discover_website_pages(
+            start_url, max_pages, max_depth, stay_on_domain, exclude_patterns, progress_callback
+        )
+        
+        if progress_callback:
+            progress_callback(0.5, f"Found {len(urls_to_scrape)} pages. Starting scraping...")
+        
+        # Scrape all discovered pages
+        results = []
+        for i, url in enumerate(urls_to_scrape, 1):
+            if progress_callback:
+                progress = 0.5 + (i / len(urls_to_scrape)) * 0.5
+                progress_callback(progress, f"Scraping page {i}/{len(urls_to_scrape)}: {url}")
+            
+            data = self.scrape_single_page(url, selectors)
+            if data:
+                results.append(data)
+            
+            if i < len(urls_to_scrape):
+                time.sleep(self.delay)
+        
+        return results
     
     def generate_html_report(self, data):
         if isinstance(data, list):
@@ -303,37 +426,75 @@ def display_scraped_data(data):
         st.error("No data to display!")
         return
     
-    # Summary Statistics
-    st.subheader("📊 Summary Statistics")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Title-Content Pairs", len(data.get('title_content_pairs', [])))
-    with col2:
-        total_content_length = sum(len(pair.get('content', '')) for pair in data.get('title_content_pairs', []))
-        st.metric("Total Characters", total_content_length)
-    
-    # Basic Info
-    st.subheader("🌍 Basic Information")
-    st.info(f"""
-    **URL:** {data.get('scraped_url', 'Unknown')}  
-    **Scraped at:** {data.get('scraped_at', 'Unknown')}
-    """)
-    
-    # Title-Content Pairs
-    if data.get('title_content_pairs'):
-        st.subheader("📋 Title-Content Pairs")
+    # Handle single page vs multiple pages
+    if isinstance(data, list):
+        st.subheader("📊 Website Scraping Summary")
+        col1, col2, col3 = st.columns(3)
         
-        for i, pair in enumerate(data['title_content_pairs'], 1):
-            title = pair.get('title', '')
-            content = pair.get('content', '')
+        with col1:
+            st.metric("Total Pages", len(data))
+        
+        with col2:
+            total_pairs = sum(len(page.get('title_content_pairs', [])) for page in data)
+            st.metric("Total Sections", total_pairs)
+        
+        with col3:
+            total_content = sum(sum(len(pair.get('content', '')) for pair in page.get('title_content_pairs', [])) for page in data)
+            st.metric("Total Characters", total_content)
+        
+        # Page selector
+        page_titles = [f"Page {i+1}: {page.get('title_content_pairs', [{}])[0].get('title', 'No title')[:50]}" for i, page in enumerate(data)]
+        selected_page = st.selectbox("📄 Select Page to View", range(len(page_titles)), format_func=lambda x: page_titles[x])
+        
+        # Display selected page
+        page_data = data[selected_page]
+        st.markdown(f"### 🌐 Page URL: {page_data.get('scraped_url', 'Unknown')}")
+        
+        if page_data.get('title_content_pairs'):
+            st.subheader("📋 Title-Content Pairs")
             
-            with st.expander(f"Section {i}: {title[:100]}{'...' if len(title) > 100 else ''}"):
-                st.write(f"**📌 Title:** {title}")
-                if content:
-                    st.write(f"**📝 Content:** {content}")
-                else:
-                    st.write("*No content found for this section*")
+            for i, pair in enumerate(page_data['title_content_pairs'], 1):
+                title = pair.get('title', '')
+                content = pair.get('content', '')
+                
+                with st.expander(f"Section {i}: {title[:100]}{'...' if len(title) > 100 else ''}"):
+                    st.write(f"**📌 Title:** {title}")
+                    if content:
+                        st.write(f"**📝 Content:** {content}")
+                    else:
+                        st.write("*No content found for this section*")
+    else:
+        # Single page display (existing code)
+        st.subheader("📊 Summary Statistics")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Title-Content Pairs", len(data.get('title_content_pairs', [])))
+        with col2:
+            total_content_length = sum(len(pair.get('content', '')) for pair in data.get('title_content_pairs', []))
+            st.metric("Total Characters", total_content_length)
+        
+        # Basic Info
+        st.subheader("🌍 Basic Information")
+        st.info(f"""
+        **URL:** {data.get('scraped_url', 'Unknown')}  
+        **Scraped at:** {data.get('scraped_at', 'Unknown')}
+        """)
+        
+        # Title-Content Pairs
+        if data.get('title_content_pairs'):
+            st.subheader("📋 Title-Content Pairs")
+            
+            for i, pair in enumerate(data['title_content_pairs'], 1):
+                title = pair.get('title', '')
+                content = pair.get('content', '')
+                
+                with st.expander(f"Section {i}: {title[:100]}{'...' if len(title) > 100 else ''}"):
+                    st.write(f"**📌 Title:** {title}")
+                    if content:
+                        st.write(f"**📝 Content:** {content}")
+                    else:
+                        st.write("*No content found for this section*")
 
 def main():
     st.set_page_config(
@@ -353,7 +514,7 @@ def main():
         # Scraping Mode
         scraping_mode = st.selectbox(
             "Scraping Mode",
-            ["Basic Content", "Custom CSS Selectors"]
+            ["Basic Content", "Custom CSS Selectors", "Website Crawler"]
         )
         
         # URL Input
@@ -362,6 +523,42 @@ def main():
             placeholder="https://example.com",
             help="Enter the full URL including http:// or https://"
         )
+        
+        # Website Crawler Configuration
+        if scraping_mode == "Website Crawler":
+            st.subheader("🕷️ Crawler Settings")
+            max_pages = st.number_input(
+                "Max Pages to Scrape",
+                min_value=1,
+                max_value=500,
+                value=50,
+                help="Maximum number of pages to discover and scrape"
+            )
+            
+            max_depth = st.number_input(
+                "Max Depth",
+                min_value=1,
+                max_value=10,
+                value=3,
+                help="Maximum link depth to follow from the starting page"
+            )
+            
+            stay_on_domain = st.checkbox(
+                "Stay on Same Domain",
+                value=True,
+                help="Only scrape pages from the same domain as the starting URL"
+            )
+            
+            exclude_patterns = st.text_area(
+                "Exclude Patterns (one per line)",
+                placeholder=r"\.(pdf|jpg|jpeg|png|gif)$\n/admin\n/login",
+                help="Regex patterns to exclude certain URLs (optional)"
+            )
+            
+            # Parse exclude patterns
+            exclude_list = []
+            if exclude_patterns:
+                exclude_list = [pattern.strip() for pattern in exclude_patterns.strip().split('\n') if pattern.strip()]
         
         # Custom Selectors
         selectors = {}
@@ -399,8 +596,37 @@ def main():
             
             if scraping_mode == "Basic Content":
                 data = scraper.scrape_single_page(url)
-            else:
+            elif scraping_mode == "Custom CSS Selectors":
                 data = scraper.scrape_single_page(url, selectors)
+            elif scraping_mode == "Website Crawler":
+                # Create progress bar for website crawling
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Define progress callback function
+                def update_progress(progress, status):
+                    progress_bar.progress(progress)
+                    status_text.text(status)
+                
+                try:
+                    data = scraper.scrape_entire_website(
+                        url, 
+                        max_pages=max_pages, 
+                        max_depth=max_depth, 
+                        stay_on_domain=stay_on_domain, 
+                        selectors=selectors, 
+                        exclude_patterns=exclude_list if exclude_list else None,
+                        progress_callback=update_progress
+                    )
+                    
+                    # Update progress to completion
+                    progress_bar.progress(1.0)
+                    status_text.text(f"✅ Completed! Scraped {len(data)} pages.")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error during crawling: {str(e)}")
+                    progress_bar.empty()
+                    status_text.empty()
         
         if data:
             st.success("✅ Scraping completed successfully!")
@@ -427,19 +653,41 @@ def main():
                 )
             
             with col2:
-                # CSV - Create rows for each title-content pair
-                if isinstance(data, dict) and data.get('title_content_pairs'):
+                # CSV - Handle both single page and multiple pages
+                csv_data = ""
+                if isinstance(data, list):
+                    # Multiple pages - create summary CSV
                     csv_rows = []
-                    for i, pair in enumerate(data['title_content_pairs'], 1):
-                        csv_rows.append({
-                            'section_number': i,
-                            'title': pair.get('title', ''),
-                            'content': pair.get('content', ''),
-                            'content_length': len(pair.get('content', ''))
-                        })
+                    for i, page in enumerate(data, 1):
+                        for j, pair in enumerate(page.get('title_content_pairs', []), 1):
+                            csv_rows.append({
+                                'page_number': i,
+                                'page_url': page.get('scraped_url', ''),
+                                'section_number': j,
+                                'title': pair.get('title', ''),
+                                'content': pair.get('content', ''),
+                                'content_length': len(pair.get('content', ''))
+                            })
                     
-                    df = pd.DataFrame(csv_rows)
-                    csv_data = df.to_csv(index=False)
+                    if csv_rows:
+                        df = pd.DataFrame(csv_rows)
+                        csv_data = df.to_csv(index=False)
+                else:
+                    # Single page
+                    if data.get('title_content_pairs'):
+                        csv_rows = []
+                        for i, pair in enumerate(data['title_content_pairs'], 1):
+                            csv_rows.append({
+                                'section_number': i,
+                                'title': pair.get('title', ''),
+                                'content': pair.get('content', ''),
+                                'content_length': len(pair.get('content', ''))
+                            })
+                        
+                        df = pd.DataFrame(csv_rows)
+                        csv_data = df.to_csv(index=False)
+                
+                if csv_data:
                     st.download_button(
                         label="📊 CSV",
                         data=csv_data,
@@ -499,25 +747,39 @@ def main():
         
         1. **Enter URL**: Input the website URL you want to scrape (must include http:// or https://)
         2. **Choose Mode**: 
-           - **Basic Content**: Extracts title, headings, paragraphs, links, and images
-           - **Custom CSS Selectors**: Extract specific elements using CSS selectors
-        3. **Configure**: If using custom mode, enter your CSS selectors
+           - **Basic Content**: Extracts title, headings, paragraphs, links, and images from a single page
+           - **Custom CSS Selectors**: Extract specific elements using CSS selectors from a single page
+           - **Website Crawler**: Discovers and scrapes all pages from an entire website
+        3. **Configure**: 
+           - For custom mode, enter your CSS selectors
+           - For crawler mode, set max pages, depth, and exclusion patterns
         4. **Scrape**: Click the "Start Scraping" button
         5. **Download**: Choose from multiple output formats (JSON, CSV, HTML, TXT, XML)
         
         ## 📋 Features
         
+        - **🕷️ Website Crawling**: Discover and scrape entire websites automatically
         - **🎯 Multiple Output Formats**: JSON, CSV, HTML, TXT, XML
         - **📊 Beautiful Visualizations**: Interactive charts and statistics
         - **🔍 Custom Selectors**: Extract specific data using CSS selectors
         - **💾 Easy Downloads**: One-click download in any format
         - **📱 Responsive Design**: Works on all devices
         - **⚡ Fast Processing**: Efficient scraping with proper headers
+        - **🛡️ Smart Filtering**: Exclude unwanted URLs and stay on domain
+        
+        ## 🕷️ Website Crawler Features
+        
+        - **Breadth-First Search**: Efficiently discovers all linked pages
+        - **Configurable Limits**: Set maximum pages and crawl depth
+        - **Domain Restriction**: Option to stay on the same domain
+        - **Pattern Exclusion**: Skip admin pages, files, and unwanted content
+        - **Progress Tracking**: Real-time progress updates during crawling
+        - **Smart URL Normalization**: Handles relative links and removes duplicates
         
         ## 🎨 Output Formats
         
-        - **JSON**: Structured data for programmatic use
-        - **CSV**: Tabular data for spreadsheets and analysis
+        - **JSON**: Structured data for programmatic use (includes page numbers for websites)
+        - **CSV**: Tabular data for spreadsheets and analysis (includes page URLs for websites)
         - **HTML**: Beautiful interactive report with styling
         - **TXT**: Formatted text report with borders and sections
         - **XML**: Structured XML for data exchange
@@ -530,6 +792,16 @@ def main():
         description:#desc          # Extract element with id "desc"
         links:a[href]              # Extract all links
         images:img                 # Extract all images
+        ```
+        
+        ## 🕷️ Crawler Exclusion Examples
+        
+        ```
+        \.(pdf|jpg|jpeg|png|gif)$   # Skip image and PDF files
+        /admin                      # Skip admin pages
+        /login                      # Skip login pages
+        \?                          # Skip URLs with query parameters
+        #                           # Skip anchor links
         ```
         
         ---

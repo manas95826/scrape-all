@@ -6,6 +6,8 @@ from urllib.parse import urljoin, urlparse
 import csv
 from datetime import datetime
 import os
+import re
+from collections import deque
 
 class WebScraper:
     def __init__(self, delay=1):
@@ -75,6 +77,119 @@ class WebScraper:
                 results.append(data)
             
             if i < len(urls):
+                time.sleep(self.delay)
+        
+        return results
+    
+    def extract_links(self, response, base_url):
+        """Extract all links from a page and normalize them"""
+        if not response:
+            return set()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        links = set()
+        
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag.get('href')
+            full_url = urljoin(base_url, href)
+            
+            # Parse and normalize URL
+            parsed = urlparse(full_url)
+            
+            # Only include HTTP/HTTPS links
+            if parsed.scheme not in ['http', 'https']:
+                continue
+            
+            # Remove fragment and query parameters for consistency
+            clean_url = parsed._replace(fragment='', params='', query='').geturl()
+            
+            links.add(clean_url)
+        
+        return links
+    
+    def is_internal_link(self, url, base_domain):
+        """Check if URL belongs to the same domain"""
+        try:
+            parsed_url = urlparse(url)
+            parsed_base = urlparse(base_domain)
+            return parsed_url.netloc == parsed_base.netloc
+        except:
+            return False
+    
+    def should_skip_url(self, url, exclude_patterns=None):
+        """Check if URL should be skipped based on patterns"""
+        if not exclude_patterns:
+            return False
+        
+        for pattern in exclude_patterns:
+            if re.search(pattern, url):
+                return True
+        return False
+    
+    def discover_website_pages(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, exclude_patterns=None):
+        """Discover all pages on a website using breadth-first search"""
+        if exclude_patterns is None:
+            exclude_patterns = [r'\.(pdf|jpg|jpeg|png|gif|zip|tar|gz|exe)$', r'#', r'\?']
+        
+        base_domain = urlparse(start_url).netloc
+        visited = set()
+        queue = deque([(start_url, 0)])  # (url, depth)
+        discovered_urls = set()
+        
+        while queue and len(discovered_urls) < max_pages:
+            current_url, depth = queue.popleft()
+            
+            if current_url in visited or depth > max_depth:
+                continue
+            
+            visited.add(current_url)
+            
+            # Skip URLs based on patterns
+            if self.should_skip_url(current_url, exclude_patterns):
+                continue
+            
+            print(f"Discovering: {current_url} (depth: {depth})")
+            
+            response = self.get_page(current_url)
+            if response:
+                discovered_urls.add(current_url)
+                
+                # Extract links and add to queue
+                links = self.extract_links(response, current_url)
+                for link in links:
+                    if link not in visited:
+                        # Stay on same domain if required
+                        if stay_on_domain and not self.is_internal_link(link, start_url):
+                            continue
+                        
+                        queue.append((link, depth + 1))
+            
+            # Add delay to be respectful
+            time.sleep(self.delay)
+        
+        return list(discovered_urls)
+    
+    def scrape_entire_website(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, selectors=None, exclude_patterns=None):
+        """Scrape entire website starting from a URL"""
+        print(f"Starting website crawl from: {start_url}")
+        print(f"Max pages: {max_pages}, Max depth: {max_depth}, Stay on domain: {stay_on_domain}")
+        
+        # Discover all pages first
+        urls_to_scrape = self.discover_website_pages(
+            start_url, max_pages, max_depth, stay_on_domain, exclude_patterns
+        )
+        
+        print(f"Discovered {len(urls_to_scrape)} pages to scrape")
+        
+        # Scrape all discovered pages
+        results = []
+        for i, url in enumerate(urls_to_scrape, 1):
+            print(f"Scraping page {i}/{len(urls_to_scrape)}: {url}")
+            data = self.scrape_single_page(url, selectors)
+            if data:
+                results.append(data)
+            
+            if i < len(urls_to_scrape):
                 time.sleep(self.delay)
         
         return results
@@ -371,8 +486,9 @@ def main():
     print("1. Basic content extraction (title, headings, paragraphs, links, images)")
     print("2. Custom CSS selectors")
     print("3. Multiple URLs from file")
+    print("4. Website crawler (discover and scrape entire website)")
     
-    choice = input("Enter your choice (1-3): ").strip()
+    choice = input("Enter your choice (1-4): ").strip()
     
     print("\nChoose output formats (comma-separated):")
     print("Available formats: json, csv, html, txt, xml")
@@ -510,6 +626,79 @@ def main():
                 print("="*60)
         except FileNotFoundError:
             print("File not found. Please check the path and try again.")
+    
+    elif choice == '4':
+        print("\n🕷️ WEBSITE CRAWLER CONFIGURATION")
+        print("="*50)
+        
+        try:
+            max_pages = int(input("Maximum pages to scrape (default 50): ") or "50")
+            max_depth = int(input("Maximum crawl depth (default 3): ") or "3")
+            stay_on_domain = input("Stay on same domain? (y/n, default y): ").lower() != 'n'
+            
+            print("\nExclude patterns (one per line, enter 'done' when finished):")
+            print("Examples: .pdf, /admin, /login")
+            
+            exclude_patterns = []
+            while True:
+                pattern = input("> ").strip()
+                if pattern.lower() == 'done' or not pattern:
+                    break
+                exclude_patterns.append(pattern)
+            
+            print(f"\nStarting website crawl from: {url}")
+            print(f"Max pages: {max_pages}, Max depth: {max_depth}")
+            print(f"Stay on domain: {stay_on_domain}")
+            if exclude_patterns:
+                print(f"Exclude patterns: {exclude_patterns}")
+            print("="*50)
+            
+            results = scraper.scrape_entire_website(
+                url, max_pages, max_depth, stay_on_domain, None, exclude_patterns
+            )
+            
+            if results:
+                for fmt in formats:
+                    output_file = f"website_crawl_{timestamp}.{fmt}"
+                    if fmt == 'json':
+                        scraper.save_to_json(results, output_file)
+                    elif fmt == 'csv':
+                        scraper.save_to_csv(results, output_file)
+                    elif fmt == 'html':
+                        scraper.save_to_html(results, output_file)
+                    elif fmt == 'txt':
+                        scraper.save_to_txt(results, output_file)
+                    elif fmt == 'xml':
+                        scraper.save_to_xml(results, output_file)
+                    else:
+                        print(f"Unsupported format: {fmt}")
+                
+                print("\n" + "="*60)
+                print("🕷️ WEBSITE CRAWLING COMPLETED!")
+                print("="*60)
+                print(f"📊 SUMMARY:")
+                print(f"  • Starting URL: {url}")
+                print(f"  • Total pages discovered and scraped: {len(results)}")
+                
+                total_content = 0
+                total_sections = 0
+                for page in results:
+                    if 'title_content_pairs' in page:
+                        total_sections += len(page['title_content_pairs'])
+                        for pair in page['title_content_pairs']:
+                            total_content += len(pair.get('content', ''))
+                
+                print(f"  • Total content sections: {total_sections}")
+                print(f"  • Total characters scraped: {total_content:,}")
+                print(f"\n📁 Files created:")
+                for fmt in formats:
+                    print(f"  • website_crawl_{timestamp}.{fmt}")
+                print("="*60)
+            else:
+                print("❌ No pages were successfully scraped.")
+                
+        except ValueError:
+            print("❌ Invalid input. Please enter valid numbers for max pages and depth.")
     
     else:
         print("Invalid choice. Please run the script again.")
