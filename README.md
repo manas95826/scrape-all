@@ -13,6 +13,41 @@ A powerful and versatile web scraping application built with Streamlit that supp
 - **⚡ Fast Processing**: Efficient scraping with proper headers
 - **🛡️ Smart Filtering**: Exclude unwanted URLs and stay on domain
 
+## 📁 Project Structure
+
+```
+scrape-all/
+├── app.py                          # Main Streamlit application
+├── run.py                          # Runner script
+├── requirements.txt                # Python dependencies
+├── README.md                       # Project documentation
+├── .gitignore                      # Git ignore file
+└── src/                            # Source code package
+    ├── __init__.py                 # Package initialization
+    ├── config.py                   # Configuration settings
+    ├── models.py                   # Data models
+    ├── utils.py                    # Utility functions
+    ├── scrapers/                   # Scraper modules
+    │   ├── __init__.py
+    │   ├── base.py                 # Base scraper class
+    │   ├── basic.py                # Basic content scraper
+    │   ├── crawler.py              # Website crawler
+    │   └── sitemap.py              # Sitemap scraper
+    ├── formatters/                 # Output formatters
+    │   ├── __init__.py
+    │   ├── base.py                 # Base formatter class
+    │   ├── json_formatter.py       # JSON formatter
+    │   ├── csv_formatter.py        # CSV formatter
+    │   ├── html_formatter.py       # HTML formatter
+    │   ├── text_formatter.py       # Text formatter
+    │   └── xml_formatter.py        # XML formatter
+    └── ui/                         # UI components
+        ├── __init__.py
+        ├── components.py           # UI components
+        ├── displays.py             # Data display components
+        └── downloads.py            # Download management
+```
+
 ## 🚀 Installation
 
 1. **Clone the repository:**
@@ -34,7 +69,9 @@ A powerful and versatile web scraping application built with Streamlit that supp
 
 4. **Run the application:**
    ```bash
-   streamlit run streamlit_scraper.py
+   streamlit run app.py
+   # Or use the runner script:
+   python run.py
    ```
 
 ## 📋 Usage
