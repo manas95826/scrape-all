@@ -69,10 +69,42 @@ scrape-all/
 
 4. **Run the application:**
    ```bash
+   # For local development:
    streamlit run app.py
+   
    # Or use the runner script:
    python run.py
    ```
+
+## 🚀 Deployment
+
+### Streamlit Cloud Deployment
+
+1. **Push to GitHub:**
+   ```bash
+   git add .
+   git commit -m "Ready for deployment"
+   git push origin main
+   ```
+
+2. **Deploy to Streamlit Cloud:**
+   - Go to [share.streamlit.io](https://share.streamlit.io)
+   - Connect your GitHub repository
+   - Select the `streamlit_app.py` file as the main file
+   - Click "Deploy"
+
+### Local Deployment
+
+```bash
+# Method 1: Direct Streamlit
+streamlit run app.py
+
+# Method 2: Using runner script
+python run.py
+
+# Method 3: Using the deployment entry point
+streamlit run streamlit_app.py
+```
 
 ## 📋 Usage
 
