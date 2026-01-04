@@ -207,15 +207,106 @@ class WebScraper:
         
         return list(discovered_urls)
     
-    def scrape_entire_website(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, selectors=None, exclude_patterns=None, progress_callback=None):
-        """Scrape entire website starting from a URL"""
-        # Discover all pages first
-        if progress_callback:
-            progress_callback(0.1, "Discovering pages...")
+    def parse_sitemap(self, sitemap_url, progress_callback=None):
+        """Parse XML sitemap and extract all URLs"""
+        try:
+            if progress_callback:
+                progress_callback(0.1, f"Fetching sitemap: {sitemap_url}")
+            
+            response = self.get_page(sitemap_url)
+            if not response:
+                return []
+            
+            if progress_callback:
+                progress_callback(0.3, "Parsing sitemap XML...")
+            
+            soup = BeautifulSoup(response.content, 'xml')
+            urls = []
+            
+            # Find all URL elements
+            url_elements = soup.find_all('url')
+            
+            if progress_callback:
+                progress_callback(0.5, f"Found {len(url_elements)} URLs in sitemap")
+            
+            for url_elem in url_elements:
+                loc_elem = url_elem.find('loc')
+                if loc_elem and loc_elem.text:
+                    urls.append(loc_elem.text.strip())
+            
+            # Also check for sitemap index (nested sitemaps)
+            sitemap_elements = soup.find_all('sitemap')
+            if sitemap_elements:
+                if progress_callback:
+                    progress_callback(0.7, f"Found {len(sitemap_elements)} nested sitemaps, processing...")
+                
+                for sitemap_elem in sitemap_elements:
+                    loc_elem = sitemap_elem.find('loc')
+                    if loc_elem and loc_elem.text:
+                        nested_urls = self.parse_sitemap(loc_elem.text.strip(), progress_callback)
+                        urls.extend(nested_urls)
+            
+            if progress_callback:
+                progress_callback(1.0, f"Successfully parsed {len(urls)} URLs from sitemap")
+            
+            return list(set(urls))  # Remove duplicates
+            
+        except Exception as e:
+            if progress_callback:
+                progress_callback(0, f"Error parsing sitemap: {str(e)}")
+            return []
+    
+    def discover_sitemap_urls(self, base_url, progress_callback=None):
+        """Try to discover and parse sitemap URLs for a website"""
+        parsed_url = urlparse(base_url)
+        domain = parsed_url.netloc
         
-        urls_to_scrape = self.discover_website_pages(
-            start_url, max_pages, max_depth, stay_on_domain, exclude_patterns, progress_callback
-        )
+        # Common sitemap locations
+        sitemap_urls = [
+            f"https://{domain}/sitemap.xml",
+            f"https://{domain}/sitemap_index.xml",
+            f"https://{domain}/sitemaps.xml",
+            f"https://www.{domain}/sitemap.xml",
+            f"https://www.{domain}/sitemap_index.xml",
+            f"https://{domain}/wp-sitemap.xml",  # WordPress
+        ]
+        
+        for sitemap_url in sitemap_urls:
+            if progress_callback:
+                progress_callback(0.1, f"Trying sitemap: {sitemap_url}")
+            
+            urls = self.parse_sitemap(sitemap_url, progress_callback)
+            if urls:
+                return urls
+        
+        if progress_callback:
+            progress_callback(0, "No sitemap found, falling back to crawling")
+        
+        return []
+
+    def scrape_entire_website(self, start_url, max_pages=50, max_depth=3, stay_on_domain=True, selectors=None, exclude_patterns=None, progress_callback=None, use_sitemap=True):
+        """Scrape entire website starting from a URL"""
+        urls_to_scrape = []
+        
+        # Try sitemap first if enabled
+        if use_sitemap:
+            if progress_callback:
+                progress_callback(0.05, "Attempting to discover sitemap...")
+            
+            sitemap_urls = self.discover_sitemap_urls(start_url, progress_callback)
+            if sitemap_urls:
+                urls_to_scrape = sitemap_urls[:max_pages]  # Limit to max_pages
+                if progress_callback:
+                    progress_callback(0.5, f"Found {len(urls_to_scrape)} URLs from sitemap")
+        
+        # Fallback to crawling if no sitemap found
+        if not urls_to_scrape:
+            if progress_callback:
+                progress_callback(0.1, "Discovering pages via crawling...")
+            
+            urls_to_scrape = self.discover_website_pages(
+                start_url, max_pages, max_depth, stay_on_domain, exclude_patterns, progress_callback
+            )
         
         if progress_callback:
             progress_callback(0.5, f"Found {len(urls_to_scrape)} pages. Starting scraping...")
@@ -514,7 +605,7 @@ def main():
         # Scraping Mode
         scraping_mode = st.selectbox(
             "Scraping Mode",
-            ["Basic Content", "Custom CSS Selectors", "Website Crawler"]
+            ["Basic Content", "Custom CSS Selectors", "Website Crawler", "Sitemap Scraper"]
         )
         
         # URL Input
@@ -549,6 +640,12 @@ def main():
                 help="Only scrape pages from the same domain as the starting URL"
             )
             
+            use_sitemap = st.checkbox(
+                "Use Sitemap (if available)",
+                value=True,
+                help="Try to discover and use XML sitemap for faster page discovery"
+            )
+            
             exclude_patterns = st.text_area(
                 "Exclude Patterns (one per line)",
                 placeholder=r"\.(pdf|jpg|jpeg|png|gif)$\n/admin\n/login",
@@ -559,6 +656,23 @@ def main():
             exclude_list = []
             if exclude_patterns:
                 exclude_list = [pattern.strip() for pattern in exclude_patterns.strip().split('\n') if pattern.strip()]
+        
+        # Sitemap Scraper Configuration
+        elif scraping_mode == "Sitemap Scraper":
+            st.subheader("🗺️ Sitemap Settings")
+            sitemap_url = st.text_input(
+                "🗺️ Sitemap URL (optional)",
+                placeholder="https://example.com/sitemap.xml",
+                help="Leave empty to auto-discover sitemap, or enter specific sitemap URL"
+            )
+            
+            max_pages = st.number_input(
+                "Max Pages to Scrape",
+                min_value=1,
+                max_value=1000,
+                value=100,
+                help="Maximum number of pages to scrape from sitemap"
+            )
         
         # Custom Selectors
         selectors = {}
@@ -616,6 +730,7 @@ def main():
                         stay_on_domain=stay_on_domain, 
                         selectors=selectors, 
                         exclude_patterns=exclude_list if exclude_list else None,
+                        use_sitemap=use_sitemap,
                         progress_callback=update_progress
                     )
                     
@@ -627,6 +742,58 @@ def main():
                     st.error(f"❌ Error during crawling: {str(e)}")
                     progress_bar.empty()
                     status_text.empty()
+            elif scraping_mode == "Sitemap Scraper":
+                # Create progress bar for sitemap scraping
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Define progress callback function
+                def update_progress(progress, status):
+                    progress_bar.progress(progress)
+                    status_text.text(status)
+                
+                try:
+                    # Use provided sitemap URL or auto-discover
+                    target_sitemap_url = sitemap_url.strip() if sitemap_url and sitemap_url.strip() else None
+                    
+                    if target_sitemap_url:
+                        # Use provided sitemap URL
+                        urls_to_scrape = scraper.parse_sitemap(target_sitemap_url, update_progress)
+                    else:
+                        # Auto-discover sitemap
+                        urls_to_scrape = scraper.discover_sitemap_urls(url, update_progress)
+                    
+                    if not urls_to_scrape:
+                        st.error("❌ No sitemap found or sitemap is empty.")
+                        progress_bar.empty()
+                        status_text.empty()
+                        data = None
+                    else:
+                        # Limit to max_pages
+                        urls_to_scrape = urls_to_scrape[:max_pages]
+                        
+                        # Scrape all URLs from sitemap
+                        results = []
+                        for i, sitemap_url in enumerate(urls_to_scrape, 1):
+                            progress = 0.5 + (i / len(urls_to_scrape)) * 0.5
+                            update_progress(progress, f"Scraping page {i}/{len(urls_to_scrape)}: {sitemap_url}")
+                            
+                            page_data = scraper.scrape_single_page(sitemap_url, selectors)
+                            if page_data:
+                                results.append(page_data)
+                            
+                            if i < len(urls_to_scrape):
+                                time.sleep(scraper.delay)
+                        
+                        data = results
+                        progress_bar.progress(1.0)
+                        status_text.text(f"✅ Completed! Scraped {len(data)} pages from sitemap.")
+                
+                except Exception as e:
+                    st.error(f"❌ Error during sitemap scraping: {str(e)}")
+                    progress_bar.empty()
+                    status_text.empty()
+                    data = None
         
         if data:
             st.success("✅ Scraping completed successfully!")
@@ -750,15 +917,18 @@ def main():
            - **Basic Content**: Extracts title, headings, paragraphs, links, and images from a single page
            - **Custom CSS Selectors**: Extract specific elements using CSS selectors from a single page
            - **Website Crawler**: Discovers and scrapes all pages from an entire website
+           - **Sitemap Scraper**: Uses XML sitemap to efficiently scrape all listed pages
         3. **Configure**: 
            - For custom mode, enter your CSS selectors
            - For crawler mode, set max pages, depth, and exclusion patterns
+           - For sitemap mode, enter specific sitemap URL or let it auto-discover
         4. **Scrape**: Click the "Start Scraping" button
         5. **Download**: Choose from multiple output formats (JSON, CSV, HTML, TXT, XML)
         
         ## 📋 Features
         
         - **🕷️ Website Crawling**: Discover and scrape entire websites automatically
+        - **🗺️ Sitemap Support**: Parse XML sitemaps for efficient page discovery
         - **🎯 Multiple Output Formats**: JSON, CSV, HTML, TXT, XML
         - **📊 Beautiful Visualizations**: Interactive charts and statistics
         - **🔍 Custom Selectors**: Extract specific data using CSS selectors
@@ -775,6 +945,16 @@ def main():
         - **Pattern Exclusion**: Skip admin pages, files, and unwanted content
         - **Progress Tracking**: Real-time progress updates during crawling
         - **Smart URL Normalization**: Handles relative links and removes duplicates
+        - **Sitemap Integration**: Optionally uses sitemaps for faster discovery
+        
+        ## 🗺️ Sitemap Scraper Features
+        
+        - **Auto-Discovery**: Automatically finds sitemap.xml at common locations
+        - **Custom Sitemap URLs**: Support for specific sitemap URLs
+        - **Nested Sitemaps**: Handles sitemap indexes and nested sitemaps
+        - **Fast Processing**: Direct URL extraction without crawling
+        - **WordPress Support**: Special handling for WordPress sitemaps
+        - **Progress Tracking**: Real-time updates during sitemap parsing
         
         ## 🎨 Output Formats
         
