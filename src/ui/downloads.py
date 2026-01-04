@@ -9,7 +9,8 @@ from datetime import datetime
 from ..models import ScrapedPage
 from ..formatters import (
     JSONFormatter, CSVFormatter, HTMLFormatter, 
-    TextFormatter, XMLFormatter
+    TextFormatter, XMLFormatter, PeptideInfoFormatter, 
+    PricingDataFormatter, PricingCSVFormatter
 )
 
 
@@ -22,7 +23,10 @@ class DownloadManager:
             'CSV': CSVFormatter(),
             'HTML': HTMLFormatter(),
             'TXT': TextFormatter(),
-            'XML': XMLFormatter()
+            'XML': XMLFormatter(),
+            'Peptide Info': PeptideInfoFormatter(),
+            'Pricing Data': PricingDataFormatter(),
+            'Pricing CSV': PricingCSVFormatter()
         }
     
     def render_download_section(self, data: Union[ScrapedPage, List[ScrapedPage]]):
@@ -33,7 +37,7 @@ class DownloadManager:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Create columns for download buttons
-        cols = st.columns(5)
+        cols = st.columns(len(self.formatters))
         
         for i, (format_name, formatter) in enumerate(self.formatters.items()):
             with cols[i]:

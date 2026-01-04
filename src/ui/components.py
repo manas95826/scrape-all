@@ -37,7 +37,8 @@ class UIComponents:
             scraping_mode = st.selectbox(
                 "Scraping Mode",
                 [ScrapingMode.BASIC, ScrapingMode.CUSTOM_SELECTORS, 
-                 ScrapingMode.WEBSITE_CRAWLER, ScrapingMode.SITEMAP_SCRAPER]
+                 ScrapingMode.WEBSITE_CRAWLER, ScrapingMode.SITEMAP_SCRAPER,
+                 "Pep-Pedia (Specialized)", "PeptiPrices (Specialized)"]
             )
             
             # URL Input
@@ -56,6 +57,10 @@ class UIComponents:
                 config = UIComponents._render_sitemap_config()
             elif scraping_mode == ScrapingMode.CUSTOM_SELECTORS:
                 config = UIComponents._render_custom_selectors_config()
+            elif scraping_mode == "Pep-Pedia (Specialized)":
+                config = UIComponents._render_pep_pedia_config()
+            elif scraping_mode == "PeptiPrices (Specialized)":
+                config = UIComponents._render_pepti_prices_config()
             
             # Scrape Button
             scrape_button = st.button("🚀 Start Scraping", type="primary")
@@ -101,7 +106,7 @@ class UIComponents:
             help="Regex patterns to exclude certain URLs (optional)"
         )
         
-        exclude_list = parse_exclude_patterns(exclude_patterns)
+        exclude_list = [pattern.strip() for pattern in exclude_patterns.strip().split('\n') if pattern.strip()]
         
         return {
             'max_pages': max_pages,
@@ -109,6 +114,94 @@ class UIComponents:
             'stay_on_domain': stay_on_domain,
             'use_sitemap': use_sitemap,
             'exclude_patterns': exclude_list
+        }
+    
+    @staticmethod
+    def _render_pep_pedia_config() -> Dict[str, Any]:
+        """Render Pep-Pedia specialized configuration."""
+        st.subheader("🧪 Pep-Pedia Settings")
+        
+        extract_molecular = st.checkbox(
+            "Extract Molecular Information",
+            value=True,
+            help="Extract molecular weight, sequence, and type information"
+        )
+        
+        extract_benefits = st.checkbox(
+            "Extract Benefits",
+            value=True,
+            help="Extract key therapeutic benefits"
+        )
+        
+        extract_mechanism = st.checkbox(
+            "Extract Mechanism of Action",
+            value=True,
+            help="Extract detailed mechanism information"
+        )
+        
+        extract_indications = st.checkbox(
+            "Extract Research Indications",
+            value=True,
+            help="Extract research applications and effectiveness"
+        )
+        
+        extract_quality = st.checkbox(
+            "Extract Quality Indicators",
+            value=True,
+            help="Extract quality descriptions and visual indicators"
+        )
+        
+        extract_protocols = st.checkbox(
+            "Extract Research Protocols",
+            value=True,
+            help="Extract dosing and reconstitution instructions"
+        )
+        
+        return {
+            'extract_molecular': extract_molecular,
+            'extract_benefits': extract_benefits,
+            'extract_mechanism': extract_mechanism,
+            'extract_indications': extract_indications,
+            'extract_quality': extract_quality,
+            'extract_protocols': extract_protocols
+        }
+    
+    @staticmethod
+    def _render_pepti_prices_config() -> Dict[str, Any]:
+        """Render PeptiPrices specialized configuration."""
+        st.subheader("💰 PeptiPrices Settings")
+        
+        extract_suppliers = st.checkbox(
+            "Extract All Suppliers",
+            value=True,
+            help="Extract pricing from all available suppliers"
+        )
+        
+        extract_stock = st.checkbox(
+            "Extract Stock Status",
+            value=True,
+            help="Extract current stock availability"
+        )
+        
+        include_original_price = st.checkbox(
+            "Include Original Prices",
+            value=True,
+            help="Include original pricing for comparison"
+        )
+        
+        min_suppliers = st.number_input(
+            "Minimum Suppliers per Product",
+            min_value=1,
+            max_value=20,
+            value=2,
+            help="Only include products with at least this many suppliers"
+        )
+        
+        return {
+            'extract_suppliers': extract_suppliers,
+            'extract_stock': extract_stock,
+            'include_original_price': include_original_price,
+            'min_suppliers': min_suppliers
         }
     
     @staticmethod
