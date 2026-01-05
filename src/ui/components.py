@@ -77,7 +77,15 @@ class UIComponents:
         
         st.info("🚀 This will automatically scrape all 63 peptide research articles from Pep-Pedia.org")
         
-        return {'bulk_scrape': True}
+        # OpenAI API Key input
+        openai_api_key = st.text_input(
+            "🔑 OpenAI API Key (Optional)",
+            type="password",
+            placeholder="Enter your OpenAI API key for content categorization...",
+            help="If provided, content will be categorized into structured fields using AI. Leave empty to skip categorization."
+        )
+        
+        return {'bulk_scrape': True, 'openai_api_key': openai_api_key}
     
     @staticmethod
     def _render_custom_selectors_config() -> Dict[str, Any]:

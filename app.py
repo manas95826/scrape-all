@@ -12,7 +12,7 @@ from src.config import Config, ScrapingMode
 from src.models import ScrapedPage
 from src.scrapers import BasicScraper, PeptiPricesScraper, PepPediaBulkScraper
 from src.ui import UIComponents, DataDisplay, DownloadManager
-from src.utils import create_progress_callback
+from src.utils import create_progress_callback, ContentCategorizer
 
 
 class WebScraperApp:
@@ -21,14 +21,11 @@ class WebScraperApp:
     def __init__(self):
         self.download_manager = DownloadManager()
         
-        # Get OpenAI API key from environment or secrets
-        openai_api_key = os.getenv('OPENAI_API_KEY')
-        
         self.scrapers = {
             ScrapingMode.BASIC: BasicScraper(),
             ScrapingMode.CUSTOM_SELECTORS: BasicScraper(),
             'PeptiPrices': PeptiPricesScraper(),
-            'Pep-Pedia': PepPediaBulkScraper(openai_api_key=openai_api_key)
+            'Pep-Pedia': PepPediaBulkScraper()  # Will be updated with API key from UI
         }
     
     def run(self):
@@ -86,6 +83,11 @@ class WebScraperApp:
         
         elif 'pep-pedia' in mode_lower:
             scraper = self.scrapers['Pep-Pedia']
+            # Update scraper with API key from config if provided
+            openai_api_key = config.get('openai_api_key')
+            if openai_api_key:
+                scraper.categorizer = ContentCategorizer(openai_api_key)
+            
             # Create progress components for bulk scraping
             progress_bar, status_text = DataDisplay.create_progress_components()
             progress_callback = create_progress_callback(progress_bar, status_text)
