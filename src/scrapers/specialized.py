@@ -5,6 +5,8 @@ Specialized scrapers for specific peptide websites.
 from typing import Dict, List, Optional, Callable
 from bs4 import BeautifulSoup
 import re
+import json
+import os
 
 from .base import BaseScraper
 from ..models import ScrapedPage
@@ -363,6 +365,25 @@ class PeptiPricesScraper(BaseScraper):
         "IGF-1 DES"
     ]
     
+    def __init__(self, delay: float = 1.0):
+        super().__init__(delay)
+        self.dosage_data = self._load_dosage_data()
+    
+    def _load_dosage_data(self) -> Dict:
+        """Load dosage data from JSON file."""
+        try:
+            # Get the project root directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(current_dir))
+            dosage_file_path = os.path.join(project_root, 'dosage_data.json')
+            
+            with open(dosage_file_path, 'r') as f:
+                data = json.load(f)
+                return data.get('dosage_data', {})
+        except Exception as e:
+            print(f"Error loading dosage data: {e}")
+            return {}
+    
     def scrape(self, url: str, **kwargs) -> Optional[ScrapedPage]:
         """Scrape PeptiPrices with structured product data."""
         # Check if this is a bulk scrape request
@@ -389,23 +410,40 @@ class PeptiPricesScraper(BaseScraper):
         return ScrapedPage.from_dict(page_data)
     
     def _bulk_scrape(self, progress_callback: Optional[Callable] = None) -> List[ScrapedPage]:
-        """Scrape all products from the product list."""
+        """Scrape all products from the product list with dosage support."""
         all_results = []
         base_url = "https://peptiprices.com/products/"
-        total_products = len(self.PRODUCT_LIST)
         
-        for index, product_name in enumerate(self.PRODUCT_LIST):
+        # Calculate total URLs (base products + dosage-specific URLs)
+        total_urls = 0
+        urls_to_scrape = []
+        
+        for product_name in self.PRODUCT_LIST:
+            product_base_url = base_url + self._product_name_to_url(product_name)
+            urls_to_scrape.append((product_name, product_base_url, None))
+            total_urls += 1
+            
+            # Check if this product has dosage data
+            if product_name in self.dosage_data:
+                dosages = self.dosage_data[product_name]
+                for dosage in dosages.keys():
+                    dosage_url = f"{product_base_url}?dosage={dosage}"
+                    urls_to_scrape.append((product_name, dosage_url, dosage))
+                    total_urls += 1
+        
+        # Scrape all URLs
+        for index, (product_name, url, dosage) in enumerate(urls_to_scrape):
             # Update progress
             if progress_callback:
-                progress = index / total_products
-                progress_callback(progress, f"Scraping {product_name} ({index + 1}/{total_products})")
-            
-            # Convert product name to URL format
-            product_url = base_url + self._product_name_to_url(product_name)
+                progress = index / total_urls
+                if dosage:
+                    progress_callback(progress, f"Scraping {product_name} - {dosage} ({index + 1}/{total_urls})")
+                else:
+                    progress_callback(progress, f"Scraping {product_name} ({index + 1}/{total_urls})")
             
             try:
-                # Scrape individual product page
-                response = self.get_page(product_url)
+                # Scrape the URL
+                response = self.get_page(url)
                 if response:
                     soup = BeautifulSoup(response.content, 'html.parser')
                     products = self._extract_product_data(soup)
@@ -415,7 +453,8 @@ class PeptiPricesScraper(BaseScraper):
                         'scraped_at': self._get_timestamp(),
                         'title_content_pairs': self._extract_title_content_pairs(soup),
                         'product_pricing': products,
-                        'searched_product': product_name
+                        'searched_product': product_name,
+                        'dosage': dosage
                     }
                     
                     all_results.append(ScrapedPage.from_dict(page_data))
@@ -425,13 +464,13 @@ class PeptiPricesScraper(BaseScraper):
                 time.sleep(1)  # 1 second delay between requests
                 
             except Exception as e:
-                # Log error but continue with other products
-                print(f"Error scraping {product_name}: {str(e)}")
+                # Log error but continue with other URLs
+                print(f"Error scraping {product_name} - {dosage or 'base'}: {str(e)}")
                 continue
         
         # Final progress update
         if progress_callback:
-            progress_callback(1.0, f"Completed! Scraped {len(all_results)} products.")
+            progress_callback(1.0, f"Completed! Scraped {len(all_results)} pages.")
         
         return all_results
     

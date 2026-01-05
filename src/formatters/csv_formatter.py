@@ -84,14 +84,18 @@ class CSVFormatter(BaseFormatter):
         if not compound_name:
             # Try to extract from URL
             if "/products/" in page.url:
-                compound_name = page.url.split("/products/")[-1].replace("-", " ").replace("_", " ").title()
+                compound_name = page.url.split("/products/")[-1].split("?")[0].replace("-", " ").replace("_", " ").title()
             else:
                 compound_name = "Unknown"
+        
+        # Extract dosage information
+        dosage = page.custom_data.get("dosage", "")
         
         for product in products:
             for supplier in product.get("suppliers", []):
                 rows.append({
                     "compound_name": compound_name,
+                    "dosage": dosage if dosage else "Standard",
                     "source_url": page.url,
                     "supplier": supplier.get("supplier", ""),
                     "price_current": supplier.get("price_current", ""),
@@ -118,15 +122,19 @@ class CSVFormatter(BaseFormatter):
             if not compound_name:
                 # Try to extract from URL
                 if "/products/" in page.url:
-                    compound_name = page.url.split("/products/")[-1].replace("-", " ").replace("_", " ").title()
+                    compound_name = page.url.split("/products/")[-1].split("?")[0].replace("-", " ").replace("_", " ").title()
                 else:
                     compound_name = "Unknown"
+            
+            # Extract dosage information
+            dosage = page.custom_data.get("dosage", "")
             
             products = page.custom_data.get("product_pricing", [])
             for product in products:
                 for supplier in product.get("suppliers", []):
                     all_rows.append({
                         "compound_name": compound_name,
+                        "dosage": dosage if dosage else "Standard",
                         "source_url": page.url,
                         "supplier": supplier.get("supplier", ""),
                         "price_current": supplier.get("price_current", ""),
@@ -138,8 +146,8 @@ class CSVFormatter(BaseFormatter):
         
         if all_rows:
             df = pd.DataFrame(all_rows)
-            # Sort by compound name for better organization
-            df = df.sort_values(['compound_name', 'supplier'])
+            # Sort by compound name, then dosage, then supplier for better organization
+            df = df.sort_values(['compound_name', 'dosage', 'supplier'])
             return df.to_csv(index=False)
         return ""
     
