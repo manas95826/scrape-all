@@ -3,13 +3,14 @@ Main Streamlit application for the Universal Web Scraper.
 """
 
 import time
+import os
 from typing import Union, List
 
 import streamlit as st
 
 from src.config import Config, ScrapingMode
 from src.models import ScrapedPage
-from src.scrapers import BasicScraper, PeptiPricesScraper
+from src.scrapers import BasicScraper, PeptiPricesScraper, PepPediaBulkScraper
 from src.ui import UIComponents, DataDisplay, DownloadManager
 from src.utils import create_progress_callback
 
@@ -19,10 +20,15 @@ class WebScraperApp:
     
     def __init__(self):
         self.download_manager = DownloadManager()
+        
+        # Get OpenAI API key from environment or secrets
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        
         self.scrapers = {
             ScrapingMode.BASIC: BasicScraper(),
             ScrapingMode.CUSTOM_SELECTORS: BasicScraper(),
-            'PeptiPrices': PeptiPricesScraper()
+            'PeptiPrices': PeptiPricesScraper(),
+            'Pep-Pedia': PepPediaBulkScraper(openai_api_key=openai_api_key)
         }
     
     def run(self):
@@ -66,6 +72,20 @@ class WebScraperApp:
         mode_lower = mode.lower()
         if 'peptiprices' in mode_lower:
             scraper = self.scrapers['PeptiPrices']
+            # Create progress components for bulk scraping
+            progress_bar, status_text = DataDisplay.create_progress_components()
+            progress_callback = create_progress_callback(progress_bar, status_text)
+            
+            try:
+                data = scraper.scrape(url, bulk_scrape=True, progress_callback=progress_callback)
+                return data
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                raise e
+        
+        elif 'pep-pedia' in mode_lower:
+            scraper = self.scrapers['Pep-Pedia']
             # Create progress components for bulk scraping
             progress_bar, status_text = DataDisplay.create_progress_components()
             progress_callback = create_progress_callback(progress_bar, status_text)

@@ -36,7 +36,7 @@ class UIComponents:
             # Scraping Mode
             scraping_mode = st.selectbox(
                 "Scraping Mode",
-                [ScrapingMode.BASIC, ScrapingMode.CUSTOM_SELECTORS, "PeptiPrices (Specialized)"]
+                [ScrapingMode.BASIC, ScrapingMode.CUSTOM_SELECTORS, "PeptiPrices (Specialized)", "Pep-Pedia (Specialized)"]
             )
             
             # URL Input
@@ -53,6 +53,8 @@ class UIComponents:
                 config = UIComponents._render_custom_selectors_config()
             elif scraping_mode == "PeptiPrices (Specialized)":
                 config = UIComponents._render_pepti_prices_config()
+            elif scraping_mode == "Pep-Pedia (Specialized)":
+                config = UIComponents._render_pep_pedia_config()
             
             # Scrape Button
             scrape_button = st.button("🚀 Start Scraping", type="primary")
@@ -65,6 +67,15 @@ class UIComponents:
         st.subheader("💰 PeptiPrices Settings")
         
         st.info("🚀 This will automatically scrape all 60+ products from PeptiPrices.com")
+        
+        return {'bulk_scrape': True}
+    
+    @staticmethod
+    def _render_pep_pedia_config() -> Dict[str, Any]:
+        """Render Pep-Pedia specialized configuration."""
+        st.subheader("📚 Pep-Pedia Settings")
+        
+        st.info("🚀 This will automatically scrape all 63 peptide research articles from Pep-Pedia.org")
         
         return {'bulk_scrape': True}
     
@@ -107,15 +118,18 @@ class UIComponents:
            - **Basic Content**: Extracts title, headings, paragraphs, links, and images from a single page
            - **Custom CSS Selectors**: Extract specific elements using CSS selectors from a single page
            - **PeptiPrices (Specialized)**: Automatically scrapes all 60+ peptide products from PeptiPrices.com
+           - **Pep-Pedia (Specialized)**: Automatically scrapes all 63 peptide research articles from Pep-Pedia.org
         3. **Configure**: 
            - For custom mode, enter your CSS selectors
            - For PeptiPrices mode, just enter https://peptiprices.com/ and it will handle everything
+           - For Pep-Pedia mode, just enter https://pep-pedia.org/browse and it will handle everything
         4. **Scrape**: Click the "Start Scraping" button
         5. **Download**: Choose from CSV and JSON output formats
         
         ## 📋 Features
         
         - **🧪 PeptiPrices Integration**: Bulk scrape all peptide products with pricing data
+        - **📚 Pep-Pedia Integration**: Bulk scrape all peptide research articles with detailed information
         - **🎯 Output Formats**: JSON and CSV with organized compound/supplier data
         - **📊 Beautiful Visualizations**: Interactive charts and statistics
         - **🔍 Custom Selectors**: Extract specific data using CSS selectors

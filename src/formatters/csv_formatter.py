@@ -29,6 +29,8 @@ class CSVFormatter(BaseFormatter):
             return self._format_pepti_prices_csv(page)
         elif 'backlinks' in page.custom_data:
             return self._format_backlinks_csv(page)
+        elif 'categorized_content' in page.custom_data:
+            return self._format_pep_pedia_csv(page)
         
         # Default formatting for title-content pairs
         for i, pair in enumerate(page.title_content_pairs, 1):
@@ -51,11 +53,14 @@ class CSVFormatter(BaseFormatter):
         # Check if any pages have specialized data
         has_product_pricing = any('product_pricing' in page.custom_data for page in pages)
         has_backlinks = any('backlinks' in page.custom_data for page in pages)
+        has_categorized_content = any('categorized_content' in page.custom_data for page in pages)
         
         if has_product_pricing:
             return self._format_pepti_prices_csv_multiple(pages)
         elif has_backlinks:
             return self._format_backlinks_csv_multiple(pages)
+        elif has_categorized_content:
+            return self._format_pep_pedia_csv_multiple(pages)
         
         # Default formatting for title-content pairs
         for i, page in enumerate(pages, 1):
@@ -191,6 +196,69 @@ class CSVFormatter(BaseFormatter):
         
         if all_rows:
             df = pd.DataFrame(all_rows)
+            return df.to_csv(index=False)
+        return ""
+    
+    def _format_pep_pedia_csv(self, page: ScrapedPage) -> str:
+        """Format Pep-Pedia categorized content as CSV."""
+        categorized_content = page.custom_data.get("categorized_content", {})
+        peptide_name = page.custom_data.get("searched_product", "")
+        
+        # Create a single row with all categorized fields
+        row = {
+            'peptide_name': peptide_name,
+            'source_url': page.url,
+            'scraped_at': page.scraped_at
+        }
+        
+        # Add all categorized fields
+        categorized_fields = [
+            "Overview", "Key Benefits", "Mechanism of Action", "Molecular Information",
+            "Research Indications", "Research Protocols", "Peptide Interactions",
+            "How to Reconstitute", "Quality Indicators", "What to Expect",
+            "Side Effects & Safety", "References", "Quick Start Guide",
+            "Storage", "Cycle Length", "Break Between"
+        ]
+        
+        for field in categorized_fields:
+            row[field] = categorized_content.get(field, "")
+        
+        df = pd.DataFrame([row])
+        return df.to_csv(index=False)
+    
+    def _format_pep_pedia_csv_multiple(self, pages: List[ScrapedPage]) -> str:
+        """Format multiple Pep-Pedia pages with categorized content as CSV."""
+        all_rows = []
+        
+        for page in pages:
+            categorized_content = page.custom_data.get("categorized_content", {})
+            peptide_name = page.custom_data.get("searched_product", "")
+            
+            # Create a row for each page
+            row = {
+                'peptide_name': peptide_name,
+                'source_url': page.url,
+                'scraped_at': page.scraped_at
+            }
+            
+            # Add all categorized fields
+            categorized_fields = [
+                "Overview", "Key Benefits", "Mechanism of Action", "Molecular Information",
+                "Research Indications", "Research Protocols", "Peptide Interactions",
+                "How to Reconstitute", "Quality Indicators", "What to Expect",
+                "Side Effects & Safety", "References", "Quick Start Guide",
+                "Storage", "Cycle Length", "Break Between"
+            ]
+            
+            for field in categorized_fields:
+                row[field] = categorized_content.get(field, "")
+            
+            all_rows.append(row)
+        
+        if all_rows:
+            df = pd.DataFrame(all_rows)
+            # Sort by peptide name for better organization
+            df = df.sort_values(['peptide_name'])
             return df.to_csv(index=False)
         return ""
     
