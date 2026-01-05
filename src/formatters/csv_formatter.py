@@ -200,43 +200,22 @@ class CSVFormatter(BaseFormatter):
         return ""
     
     def _format_pep_pedia_csv(self, page: ScrapedPage) -> str:
-        """Format Pep-Pedia categorized content as CSV."""
+        """Format Pep-Pedia categorized content as CSV with route separation."""
         categorized_content = page.custom_data.get("categorized_content", {})
         peptide_name = page.custom_data.get("searched_product", "")
+        content_by_route = page.custom_data.get("content_by_route", {})
+        peptide_info = page.custom_data.get("peptide_info", {})
         
-        # Create a single row with all categorized fields
-        row = {
-            'peptide_name': peptide_name,
-            'source_url': page.url,
-            'scraped_at': page.scraped_at
-        }
+        rows = []
         
-        # Add all categorized fields
-        categorized_fields = [
-            "Overview", "Key Benefits", "Mechanism of Action", "Molecular Information",
-            "Research Indications", "Research Protocols", "Peptide Interactions",
-            "How to Reconstitute", "Quality Indicators", "What to Expect",
-            "Side Effects & Safety", "References", "Quick Start Guide",
-            "Storage", "Cycle Length", "Break Between"
-        ]
+        # Get all available routes
+        routes = content_by_route.keys() if content_by_route else ['oral']  # Default to oral if no route data
         
-        for field in categorized_fields:
-            row[field] = categorized_content.get(field, "")
-        
-        df = pd.DataFrame([row])
-        return df.to_csv(index=False)
-    
-    def _format_pep_pedia_csv_multiple(self, pages: List[ScrapedPage]) -> str:
-        """Format multiple Pep-Pedia pages with categorized content as CSV."""
-        all_rows = []
-        
-        for page in pages:
-            categorized_content = page.custom_data.get("categorized_content", {})
-            peptide_name = page.custom_data.get("searched_product", "")
-            
-            # Create a row for each page
+        for route in routes:
+            # Create a row for each route
             row = {
                 'peptide_name': peptide_name,
+                'route': route,
                 'source_url': page.url,
                 'scraped_at': page.scraped_at
             }
@@ -253,12 +232,185 @@ class CSVFormatter(BaseFormatter):
             for field in categorized_fields:
                 row[field] = categorized_content.get(field, "")
             
-            all_rows.append(row)
+            # Add route-specific peptide info if available
+            if peptide_info and route in peptide_info:
+                route_peptide_info = peptide_info[route]
+                
+                # Add specific peptide info fields
+                if 'name' in route_peptide_info:
+                    row['peptide_display_name'] = route_peptide_info['name']
+                
+                # Add molecular info
+                if 'molecular_info' in route_peptide_info:
+                    mol_info = route_peptide_info['molecular_info']
+                    for key, value in mol_info.items():
+                        row[f'molecular_{key.lower().replace(" ", "_")}'] = value
+                
+                # Add benefits
+                if 'benefits' in route_peptide_info:
+                    benefits = route_peptide_info['benefits']
+                    if isinstance(benefits, list):
+                        row['benefits'] = '; '.join(benefits)
+                    else:
+                        row['benefits'] = str(benefits)
+                
+                # Add mechanism
+                if 'mechanism_of_action' in route_peptide_info:
+                    row['route_mechanism'] = route_peptide_info['mechanism_of_action']
+                
+                # Add research indications
+                if 'research_indications' in route_peptide_info:
+                    indications = route_peptide_info['research_indications']
+                    if isinstance(indications, list):
+                        row['route_indications'] = '; '.join(indications)
+                    else:
+                        row['route_indications'] = str(indications)
+                
+                # Add protocols
+                if 'protocols' in route_peptide_info:
+                    protocols = route_peptide_info['protocols']
+                    if isinstance(protocols, list):
+                        protocol_texts = []
+                        for protocol in protocols:
+                            if isinstance(protocol, dict):
+                                protocol_text = protocol.get('description', '')
+                                if 'details' in protocol:
+                                    protocol_text += f" - {protocol['details']}"
+                                protocol_texts.append(protocol_text)
+                            else:
+                                protocol_texts.append(str(protocol))
+                        row['route_protocols'] = '; '.join(protocol_texts)
+                    else:
+                        row['route_protocols'] = str(protocols)
+            
+            # Add content sections for this route
+            if content_by_route and route in content_by_route:
+                route_content = content_by_route[route]
+                if route_content:
+                    # Combine all content for this route
+                    all_titles = []
+                    all_contents = []
+                    for content_pair in route_content:
+                        if isinstance(content_pair, dict):
+                            all_titles.append(content_pair.get('title', ''))
+                            all_contents.append(content_pair.get('content', ''))
+                    
+                    row['route_content_titles'] = ' | '.join(all_titles)
+                    row['route_content'] = ' \n\n '.join(all_contents)
+            
+            rows.append(row)
+        
+        if rows:
+            df = pd.DataFrame(rows)
+            return df.to_csv(index=False)
+        return ""
+    
+    def _format_pep_pedia_csv_multiple(self, pages: List[ScrapedPage]) -> str:
+        """Format multiple Pep-Pedia pages with categorized content as CSV with route separation."""
+        all_rows = []
+        
+        for page in pages:
+            categorized_content = page.custom_data.get("categorized_content", {})
+            peptide_name = page.custom_data.get("searched_product", "")
+            content_by_route = page.custom_data.get("content_by_route", {})
+            peptide_info = page.custom_data.get("peptide_info", {})
+            
+            # Get all available routes
+            routes = content_by_route.keys() if content_by_route else ['oral']  # Default to oral if no route data
+            
+            for route in routes:
+                # Create a row for each route
+                row = {
+                    'peptide_name': peptide_name,
+                    'route': route,
+                    'source_url': page.url,
+                    'scraped_at': page.scraped_at
+                }
+                
+                # Add all categorized fields
+                categorized_fields = [
+                    "Overview", "Key Benefits", "Mechanism of Action", "Molecular Information",
+                    "Research Indications", "Research Protocols", "Peptide Interactions",
+                    "How to Reconstitute", "Quality Indicators", "What to Expect",
+                    "Side Effects & Safety", "References", "Quick Start Guide",
+                    "Storage", "Cycle Length", "Break Between"
+                ]
+                
+                for field in categorized_fields:
+                    row[field] = categorized_content.get(field, "")
+                
+                # Add route-specific peptide info if available
+                if peptide_info and route in peptide_info:
+                    route_peptide_info = peptide_info[route]
+                    
+                    # Add specific peptide info fields
+                    if 'name' in route_peptide_info:
+                        row['peptide_display_name'] = route_peptide_info['name']
+                    
+                    # Add molecular info
+                    if 'molecular_info' in route_peptide_info:
+                        mol_info = route_peptide_info['molecular_info']
+                        for key, value in mol_info.items():
+                            row[f'molecular_{key.lower().replace(" ", "_")}'] = value
+                    
+                    # Add benefits
+                    if 'benefits' in route_peptide_info:
+                        benefits = route_peptide_info['benefits']
+                        if isinstance(benefits, list):
+                            row['benefits'] = '; '.join(benefits)
+                        else:
+                            row['benefits'] = str(benefits)
+                    
+                    # Add mechanism
+                    if 'mechanism_of_action' in route_peptide_info:
+                        row['route_mechanism'] = route_peptide_info['mechanism_of_action']
+                    
+                    # Add research indications
+                    if 'research_indications' in route_peptide_info:
+                        indications = route_peptide_info['research_indications']
+                        if isinstance(indications, list):
+                            row['route_indications'] = '; '.join(indications)
+                        else:
+                            row['route_indications'] = str(indications)
+                    
+                    # Add protocols
+                    if 'protocols' in route_peptide_info:
+                        protocols = route_peptide_info['protocols']
+                        if isinstance(protocols, list):
+                            protocol_texts = []
+                            for protocol in protocols:
+                                if isinstance(protocol, dict):
+                                    protocol_text = protocol.get('description', '')
+                                    if 'details' in protocol:
+                                        protocol_text += f" - {protocol['details']}"
+                                    protocol_texts.append(protocol_text)
+                                else:
+                                    protocol_texts.append(str(protocol))
+                            row['route_protocols'] = '; '.join(protocol_texts)
+                        else:
+                            row['route_protocols'] = str(protocols)
+                
+                # Add content sections for this route
+                if content_by_route and route in content_by_route:
+                    route_content = content_by_route[route]
+                    if route_content:
+                        # Combine all content for this route
+                        all_titles = []
+                        all_contents = []
+                        for content_pair in route_content:
+                            if isinstance(content_pair, dict):
+                                all_titles.append(content_pair.get('title', ''))
+                                all_contents.append(content_pair.get('content', ''))
+                        
+                        row['route_content_titles'] = ' | '.join(all_titles)
+                        row['route_content'] = ' \n\n '.join(all_contents)
+                
+                all_rows.append(row)
         
         if all_rows:
             df = pd.DataFrame(all_rows)
-            # Sort by peptide name for better organization
-            df = df.sort_values(['peptide_name'])
+            # Sort by peptide name, then route for better organization
+            df = df.sort_values(['peptide_name', 'route'])
             return df.to_csv(index=False)
         return ""
     

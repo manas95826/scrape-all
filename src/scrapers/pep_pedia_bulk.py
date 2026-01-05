@@ -100,15 +100,28 @@ class PepPediaBulkScraper(BaseScraper):
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Extract structured peptide data
-        peptide_info = self._extract_peptide_info(soup)
-        title_content_pairs = self._extract_title_content_pairs(soup)
+        # Extract content by route (oral/injectable)
+        route_content = self._extract_by_route(soup)
+        
+        # Extract peptide info per route
+        peptide_info = {}
+        for route, content in route_content.items():
+            route_soup = BeautifulSoup(
+                "".join([c["content"] for c in content]),
+                "html.parser"
+            )
+            peptide_info[route] = self._extract_peptide_info(route_soup)
         
         # Categorize content if OpenAI is available
         categorized_content = {}
-        if self.categorizer and title_content_pairs:
-            # Combine all title-content pairs into single content
-            full_content = "\n\n".join([f"{pair['title']}\n{pair['content']}" for pair in title_content_pairs])
+        if self.categorizer and route_content:
+            # Combine all route content into single content
+            all_content = []
+            for route, content in route_content.items():
+                route_content_text = "\n\n".join([f"{pair['title']}\n{pair['content']}" for pair in content])
+                all_content.append(f"=== {route.upper()} ===\n{route_content_text}")
+            
+            full_content = "\n\n".join(all_content)
             page_title = soup.find('h1')
             page_title_text = page_title.get_text(strip=True) if page_title else ""
             
@@ -121,7 +134,10 @@ class PepPediaBulkScraper(BaseScraper):
         page_data = {
             'scraped_url': response.url,
             'scraped_at': self._get_timestamp(),
-            'title_content_pairs': title_content_pairs,
+            'content_by_route': {
+                'oral': route_content.get('oral', []),
+                'injectable': route_content.get('injectable', [])
+            },
             'peptide_info': peptide_info,
             'categorized_content': categorized_content
         }
@@ -148,14 +164,29 @@ class PepPediaBulkScraper(BaseScraper):
                 response = self.get_page(product_url)
                 if response:
                     soup = BeautifulSoup(response.content, 'html.parser')
-                    peptide_info = self._extract_peptide_info(soup)
-                    title_content_pairs = self._extract_title_content_pairs(soup)
+                    
+                    # Extract content by route (oral/injectable)
+                    route_content = self._extract_by_route(soup)
+                    
+                    # Extract peptide info per route
+                    peptide_info = {}
+                    for route, content in route_content.items():
+                        route_soup = BeautifulSoup(
+                            "".join([c["content"] for c in content]),
+                            "html.parser"
+                        )
+                        peptide_info[route] = self._extract_peptide_info(route_soup)
                     
                     # Categorize content if OpenAI is available
                     categorized_content = {}
-                    if self.categorizer and title_content_pairs:
-                        # Combine all title-content pairs into single content
-                        full_content = "\n\n".join([f"{pair['title']}\n{pair['content']}" for pair in title_content_pairs])
+                    if self.categorizer and route_content:
+                        # Combine all route content into single content
+                        all_content = []
+                        for route, content in route_content.items():
+                            route_content_text = "\n\n".join([f"{pair['title']}\n{pair['content']}" for pair in content])
+                            all_content.append(f"=== {route.upper()} ===\n{route_content_text}")
+                        
+                        full_content = "\n\n".join(all_content)
                         page_title = soup.find('h1')
                         page_title_text = page_title.get_text(strip=True) if page_title else ""
                         
@@ -168,7 +199,10 @@ class PepPediaBulkScraper(BaseScraper):
                     page_data = {
                         'scraped_url': response.url,
                         'scraped_at': self._get_timestamp(),
-                        'title_content_pairs': title_content_pairs,
+                        'content_by_route': {
+                            'oral': route_content.get('oral', []),
+                            'injectable': route_content.get('injectable', [])
+                        },
                         'peptide_info': peptide_info,
                         'searched_product': product_name,
                         'categorized_content': categorized_content
@@ -476,6 +510,72 @@ class PepPediaBulkScraper(BaseScraper):
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format."""
         return datetime.now().isoformat()
+    
+    def _extract_by_route(self, soup: BeautifulSoup) -> Dict[str, List[Dict]]:
+        """Extract content by route (oral/injectable) from toggle-based layouts."""
+        routes = {}
+        
+        for route in ["oral", "injectable"]:
+            # Try different selector patterns for route containers
+            container = soup.select_one(
+                f'[data-tab="{route}"], [data-route="{route}"], .{route}-content, #{route}-content, .{route}.tab-panel'
+            )
+            
+            if not container:
+                # Try to find by class name containing the route
+                container = soup.find(lambda tag: tag.has_attr('class') and 
+                                     any(route in str(cls).lower() for cls in tag.get('class', [])) and
+                                     any('tab' in str(cls).lower() or 'panel' in str(cls).lower() or 'content' in str(cls).lower() 
+                                         for cls in tag.get('class', [])))
+            
+            if container:
+                routes[route] = self._extract_title_content_pairs(container)
+        
+        # If no route-specific containers found, fall back to extracting all content
+        if not routes:
+            # Try to identify route sections by looking for route indicators in text
+            all_content = self._extract_title_content_pairs(soup)
+            oral_content = []
+            injectable_content = []
+            current_route = None
+            
+            for pair in all_content:
+                title_lower = pair['title'].lower()
+                content_lower = pair['content'].lower()
+                
+                # Check if this title indicates a route section
+                if any(keyword in title_lower for keyword in ['oral', 'injectable', 'injection']):
+                    if 'oral' in title_lower:
+                        current_route = 'oral'
+                    elif 'injectable' in title_lower or 'injection' in title_lower:
+                        current_route = 'injectable'
+                
+                # Assign content to appropriate route
+                if current_route == 'oral':
+                    oral_content.append(pair)
+                elif current_route == 'injectable':
+                    injectable_content.append(pair)
+                else:
+                    # If no route identified, check content for route indicators
+                    if any(keyword in content_lower for keyword in ['oral', 'injectable', 'injection']):
+                        if 'oral' in content_lower and 'injectable' not in content_lower:
+                            oral_content.append(pair)
+                        elif 'injectable' in content_lower or 'injection' in content_lower:
+                            injectable_content.append(pair)
+                        else:
+                            # Content mentions both routes, add to both
+                            oral_content.append(pair)
+                            injectable_content.append(pair)
+                    else:
+                        # Default to oral if no route indicators
+                        oral_content.append(pair)
+            
+            if oral_content:
+                routes['oral'] = oral_content
+            if injectable_content:
+                routes['injectable'] = injectable_content
+        
+        return routes
     
     def _extract_title_content_pairs(self, soup: BeautifulSoup) -> List[Dict[str, str]]:
         """Extract title-content pairs from HTML."""
