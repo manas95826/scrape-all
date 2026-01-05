@@ -36,9 +36,7 @@ class UIComponents:
             # Scraping Mode
             scraping_mode = st.selectbox(
                 "Scraping Mode",
-                [ScrapingMode.BASIC, ScrapingMode.CUSTOM_SELECTORS, 
-                 ScrapingMode.WEBSITE_CRAWLER, ScrapingMode.SITEMAP_SCRAPER,
-                 "Pep-Pedia (Specialized)", "PeptiPrices (Specialized)"]
+                [ScrapingMode.BASIC, ScrapingMode.CUSTOM_SELECTORS, "PeptiPrices (Specialized)"]
             )
             
             # URL Input
@@ -51,14 +49,8 @@ class UIComponents:
             # Mode-specific configuration
             config = {}
             
-            if scraping_mode == ScrapingMode.WEBSITE_CRAWLER:
-                config = UIComponents._render_crawler_config()
-            elif scraping_mode == ScrapingMode.SITEMAP_SCRAPER:
-                config = UIComponents._render_sitemap_config()
-            elif scraping_mode == ScrapingMode.CUSTOM_SELECTORS:
+            if scraping_mode == ScrapingMode.CUSTOM_SELECTORS:
                 config = UIComponents._render_custom_selectors_config()
-            elif scraping_mode == "Pep-Pedia (Specialized)":
-                config = UIComponents._render_pep_pedia_config()
             elif scraping_mode == "PeptiPrices (Specialized)":
                 config = UIComponents._render_pepti_prices_config()
             
@@ -68,165 +60,13 @@ class UIComponents:
             return scraping_mode, url, config, scrape_button
     
     @staticmethod
-    def _render_crawler_config() -> Dict[str, Any]:
-        """Render crawler-specific configuration."""
-        st.subheader("🕷️ Crawler Settings")
-        
-        max_pages = st.number_input(
-            "Max Pages to Scrape",
-            min_value=1,
-            max_value=Config.MAX_PAGES_LIMIT,
-            value=Config.DEFAULT_MAX_PAGES,
-            help="Maximum number of pages to discover and scrape"
-        )
-        
-        max_depth = st.number_input(
-            "Max Depth",
-            min_value=1,
-            max_value=Config.MAX_DEPTH_LIMIT,
-            value=Config.DEFAULT_MAX_DEPTH,
-            help="Maximum link depth to follow from the starting page"
-        )
-        
-        stay_on_domain = st.checkbox(
-            "Stay on Same Domain",
-            value=True,
-            help="Only scrape pages from the same domain as the starting URL"
-        )
-        
-        use_sitemap = st.checkbox(
-            "Use Sitemap (if available)",
-            value=True,
-            help="Try to discover and use XML sitemap for faster page discovery"
-        )
-        
-        exclude_patterns = st.text_area(
-            "Exclude Patterns (one per line)",
-            placeholder=r"\.(pdf|jpg|jpeg|png|gif)$\n/admin\n/login",
-            help="Regex patterns to exclude certain URLs (optional)"
-        )
-        
-        exclude_list = [pattern.strip() for pattern in exclude_patterns.strip().split('\n') if pattern.strip()]
-        
-        return {
-            'max_pages': max_pages,
-            'max_depth': max_depth,
-            'stay_on_domain': stay_on_domain,
-            'use_sitemap': use_sitemap,
-            'exclude_patterns': exclude_list
-        }
-    
-    @staticmethod
-    def _render_pep_pedia_config() -> Dict[str, Any]:
-        """Render Pep-Pedia specialized configuration."""
-        st.subheader("🧪 Pep-Pedia Settings")
-        
-        extract_molecular = st.checkbox(
-            "Extract Molecular Information",
-            value=True,
-            help="Extract molecular weight, sequence, and type information"
-        )
-        
-        extract_benefits = st.checkbox(
-            "Extract Benefits",
-            value=True,
-            help="Extract key therapeutic benefits"
-        )
-        
-        extract_mechanism = st.checkbox(
-            "Extract Mechanism of Action",
-            value=True,
-            help="Extract detailed mechanism information"
-        )
-        
-        extract_indications = st.checkbox(
-            "Extract Research Indications",
-            value=True,
-            help="Extract research applications and effectiveness"
-        )
-        
-        extract_quality = st.checkbox(
-            "Extract Quality Indicators",
-            value=True,
-            help="Extract quality descriptions and visual indicators"
-        )
-        
-        extract_protocols = st.checkbox(
-            "Extract Research Protocols",
-            value=True,
-            help="Extract dosing and reconstitution instructions"
-        )
-        
-        return {
-            'extract_molecular': extract_molecular,
-            'extract_benefits': extract_benefits,
-            'extract_mechanism': extract_mechanism,
-            'extract_indications': extract_indications,
-            'extract_quality': extract_quality,
-            'extract_protocols': extract_protocols
-        }
-    
-    @staticmethod
     def _render_pepti_prices_config() -> Dict[str, Any]:
         """Render PeptiPrices specialized configuration."""
         st.subheader("💰 PeptiPrices Settings")
         
-        extract_suppliers = st.checkbox(
-            "Extract All Suppliers",
-            value=True,
-            help="Extract pricing from all available suppliers"
-        )
+        st.info("🚀 This will automatically scrape all 60+ products from PeptiPrices.com")
         
-        extract_stock = st.checkbox(
-            "Extract Stock Status",
-            value=True,
-            help="Extract current stock availability"
-        )
-        
-        include_original_price = st.checkbox(
-            "Include Original Prices",
-            value=True,
-            help="Include original pricing for comparison"
-        )
-        
-        min_suppliers = st.number_input(
-            "Minimum Suppliers per Product",
-            min_value=1,
-            max_value=20,
-            value=2,
-            help="Only include products with at least this many suppliers"
-        )
-        
-        return {
-            'extract_suppliers': extract_suppliers,
-            'extract_stock': extract_stock,
-            'include_original_price': include_original_price,
-            'min_suppliers': min_suppliers
-        }
-    
-    @staticmethod
-    def _render_sitemap_config() -> Dict[str, Any]:
-        """Render sitemap-specific configuration."""
-        st.subheader("🗺️ Sitemap Settings")
-        
-        sitemap_url = st.text_input(
-            "🗺️ Sitemap URL (optional)",
-            placeholder="https://example.com/sitemap.xml",
-            help="Leave empty to auto-discover sitemap, or enter specific sitemap URL"
-        )
-        
-        max_pages = st.number_input(
-            "Max Pages to Scrape",
-            min_value=1,
-            max_value=Config.MAX_PAGES_LIMIT,
-            value=100,
-            help="Maximum number of pages to scrape from sitemap"
-        )
-        
-        return {
-            'sitemap_url': sitemap_url,
-            'max_pages': max_pages
-        }
+        return {'bulk_scrape': True}
     
     @staticmethod
     def _render_custom_selectors_config() -> Dict[str, Any]:
@@ -266,24 +106,21 @@ class UIComponents:
         2. **Choose Mode**: 
            - **Basic Content**: Extracts title, headings, paragraphs, links, and images from a single page
            - **Custom CSS Selectors**: Extract specific elements using CSS selectors from a single page
-           - **Website Crawler**: Discovers and scrapes all pages from an entire website
-           - **Sitemap Scraper**: Uses XML sitemap to efficiently scrape all listed pages
+           - **PeptiPrices (Specialized)**: Automatically scrapes all 60+ peptide products from PeptiPrices.com
         3. **Configure**: 
            - For custom mode, enter your CSS selectors
-           - For crawler mode, set max pages, depth, and exclusion patterns
-           - For sitemap mode, enter specific sitemap URL or let it auto-discover
+           - For PeptiPrices mode, just enter https://peptiprices.com/ and it will handle everything
         4. **Scrape**: Click the "Start Scraping" button
-        5. **Download**: Choose from multiple output formats (JSON, CSV, HTML, TXT, XML)
+        5. **Download**: Choose from CSV and JSON output formats
         
         ## 📋 Features
         
-        - **🕷️ Website Crawling**: Discover and scrape entire websites automatically
-        - **🗺️ Sitemap Support**: Parse XML sitemaps for efficient page discovery
-        - **🎯 Multiple Output Formats**: JSON, CSV, HTML, TXT, XML
+        - **🧪 PeptiPrices Integration**: Bulk scrape all peptide products with pricing data
+        - **🎯 Output Formats**: JSON and CSV with organized compound/supplier data
         - **📊 Beautiful Visualizations**: Interactive charts and statistics
         - **🔍 Custom Selectors**: Extract specific data using CSS selectors
-        - **💾 Easy Downloads**: One-click download in any format
+        - **💾 Easy Downloads**: One-click download in CSV or JSON format
         - **📱 Responsive Design**: Works on all devices
         - **⚡ Fast Processing**: Efficient scraping with proper headers
-        - **🛡️ Smart Filtering**: Exclude unwanted URLs and stay on domain
+        - **📈 Progress Tracking**: Real-time progress bars for bulk operations
         """)

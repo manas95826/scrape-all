@@ -8,7 +8,7 @@ from typing import Union, List
 from datetime import datetime
 
 from ..models import ScrapedPage, ScrapingStats
-from ..formatters import JSONFormatter, TextFormatter, HTMLFormatter
+from ..formatters import JSONFormatter
 
 
 class DataDisplay:
@@ -118,26 +118,15 @@ class DataDisplay:
     
     @staticmethod
     def display_raw_data_preview(data: Union[ScrapedPage, List[ScrapedPage]]):
-        """Display raw data preview in different formats."""
+        """Display raw data preview in JSON format."""
         st.markdown("---")
         st.subheader("🔍 Raw Data Preview")
         
-        format_tabs = st.tabs(["JSON", "Formatted Text", "HTML Preview"])
-        
-        with format_tabs[0]:
-            # Convert to dict for JSON display
-            if isinstance(data, ScrapedPage):
-                st.json(data.to_dict())
-            else:
-                st.json([page.to_dict() for page in data])
-        
-        with format_tabs[1]:
-            text_formatter = TextFormatter()
-            st.text(text_formatter.format(data))
-        
-        with format_tabs[2]:
-            html_formatter = HTMLFormatter()
-            st.components.v1.html(html_formatter.format(data), height=600, scrolling=True)
+        # Convert to dict for JSON display
+        if isinstance(data, ScrapedPage):
+            st.json(data.to_dict())
+        else:
+            st.json([page.to_dict() for page in data])
     
     @staticmethod
     def display_error(message: str):
