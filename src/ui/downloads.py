@@ -8,9 +8,7 @@ from datetime import datetime
 
 from ..models import ScrapedPage
 from ..formatters import (
-    JSONFormatter, CSVFormatter, HTMLFormatter, 
-    TextFormatter, XMLFormatter, PeptideInfoFormatter, 
-    PricingDataFormatter, PricingCSVFormatter
+    JSONFormatter, CSVFormatter
 )
 
 
@@ -20,13 +18,7 @@ class DownloadManager:
     def __init__(self):
         self.formatters = {
             'JSON': JSONFormatter(),
-            'CSV': CSVFormatter(),
-            'HTML': HTMLFormatter(),
-            'TXT': TextFormatter(),
-            'XML': XMLFormatter(),
-            'Peptide Info': PeptideInfoFormatter(),
-            'Pricing Data': PricingDataFormatter(),
-            'Pricing CSV': PricingCSVFormatter()
+            'CSV': CSVFormatter()
         }
     
     def render_download_section(self, data: Union[ScrapedPage, List[ScrapedPage]]):

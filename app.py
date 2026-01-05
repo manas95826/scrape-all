@@ -9,7 +9,7 @@ import streamlit as st
 
 from src.config import Config, ScrapingMode
 from src.models import ScrapedPage
-from src.scrapers import BasicScraper, WebsiteCrawler, SitemapScraper, PepPediaScraper, PeptiPricesScraper
+from src.scrapers import BasicScraper, PeptiPricesScraper
 from src.ui import UIComponents, DataDisplay, DownloadManager
 from src.utils import create_progress_callback
 
@@ -22,9 +22,6 @@ class WebScraperApp:
         self.scrapers = {
             ScrapingMode.BASIC: BasicScraper(),
             ScrapingMode.CUSTOM_SELECTORS: BasicScraper(),
-            ScrapingMode.WEBSITE_CRAWLER: WebsiteCrawler(),
-            ScrapingMode.SITEMAP_SCRAPER: SitemapScraper(),
-            'Pep-Pedia': PepPediaScraper(),
             'PeptiPrices': PeptiPricesScraper()
         }
     
@@ -67,12 +64,19 @@ class WebScraperApp:
         """Scrape data based on selected mode."""
         # Handle specialized scrapers (case-insensitive matching)
         mode_lower = mode.lower()
-        if 'pep-pedia' in mode_lower:
-            scraper = self.scrapers['Pep-Pedia']
-            return scraper.scrape(url)
-        elif 'peptiprices' in mode_lower:
+        if 'peptiprices' in mode_lower:
             scraper = self.scrapers['PeptiPrices']
-            return scraper.scrape(url)
+            # Create progress components for bulk scraping
+            progress_bar, status_text = DataDisplay.create_progress_components()
+            progress_callback = create_progress_callback(progress_bar, status_text)
+            
+            try:
+                data = scraper.scrape(url, bulk_scrape=True, progress_callback=progress_callback)
+                return data
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                raise e
         
         # Handle standard modes - check if mode exists in scrapers dict
         if mode in self.scrapers:
@@ -84,66 +88,9 @@ class WebScraperApp:
             elif mode == ScrapingMode.CUSTOM_SELECTORS:
                 selectors = config.get('selectors', {})
                 return scraper.scrape(url, selectors=selectors)
-            
-            elif mode == ScrapingMode.WEBSITE_CRAWLER:
-                return self._scrape_website_crawler(scraper, url, config)
-            
-            elif mode == ScrapingMode.SITEMAP_SCRAPER:
-                return self._scrape_sitemap(scraper, url, config)
         
         # If we get here, the mode is not recognized
         raise ValueError(f"Unknown scraping mode: {mode}")
-    
-    def _scrape_website_crawler(self, scraper, url: str, config: dict) -> List[ScrapedPage]:
-        """Handle website crawler mode with progress tracking."""
-        progress_bar, status_text = DataDisplay.create_progress_components()
-        progress_callback = create_progress_callback(progress_bar, status_text)
-        
-        try:
-            data = scraper.scrape(
-                url,
-                max_pages=config.get('max_pages', Config.DEFAULT_MAX_PAGES),
-                max_depth=config.get('max_depth', Config.DEFAULT_MAX_DEPTH),
-                stay_on_domain=config.get('stay_on_domain', True),
-                exclude_patterns=config.get('exclude_patterns', Config.DEFAULT_EXCLUDE_PATTERNS),
-                use_sitemap=config.get('use_sitemap', True),
-                progress_callback=progress_callback
-            )
-            
-            # Update progress to completion
-            progress_bar.progress(1.0)
-            status_text.text(f"✅ Completed! Scraped {len(data)} pages.")
-            
-            return data
-        
-        except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
-            raise e
-    
-    def _scrape_sitemap(self, scraper, url: str, config: dict) -> List[ScrapedPage]:
-        """Handle sitemap scraper mode with progress tracking."""
-        progress_bar, status_text = DataDisplay.create_progress_components()
-        progress_callback = create_progress_callback(progress_bar, status_text)
-        
-        try:
-            data = scraper.scrape(
-                url,
-                sitemap_url=config.get('sitemap_url'),
-                max_pages=config.get('max_pages', Config.DEFAULT_MAX_PAGES),
-                progress_callback=progress_callback
-            )
-            
-            if data:
-                progress_bar.progress(1.0)
-                status_text.text(f"✅ Completed! Scraped {len(data)} pages from sitemap.")
-            
-            return data
-        
-        except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
-            raise e
 
 
 def main():

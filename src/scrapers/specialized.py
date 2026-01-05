@@ -2,7 +2,7 @@
 Specialized scrapers for specific peptide websites.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 from bs4 import BeautifulSoup
 import re
 
@@ -301,8 +301,75 @@ class PepPediaScraper(BaseScraper):
 class PeptiPricesScraper(BaseScraper):
     """Specialized scraper for PeptiPrices.com."""
     
+    # Product list with URL mappings
+    PRODUCT_LIST = [
+        "Retatrutide",
+        "Tirzepatide", 
+        "Tesamorelin",
+        "KLOW",
+        "GHK-Cu",
+        "BPC-157/TB-500",
+        "MOTS-c",
+        "GLOW",
+        "BPC-157",
+        "Ipamorelin/CJC-1295 (No DAC)",
+        "Semaglutide",
+        "TB-500",
+        "Bacteriostatic Water",
+        "Ipamorelin",
+        "Cagrilintide",
+        "PT-141",
+        "Epithalon",
+        "KPV",
+        "Selank",
+        "NAD+",
+        "Glutathione",
+        "Semax",
+        "AOD-9604",
+        "DSIP",
+        "Melanotan-2",
+        "Sermorelin",
+        "IGF-1 LR3",
+        "5-Amino-1MQ",
+        "CJC-1295 (No DAC)",
+        "Melanotan-1",
+        "SS-31",
+        "Thymosin Alpha-1",
+        "ARA-290",
+        "Oxytocin",
+        "SNAP-8",
+        "Acetic Acid",
+        "Tesamorelin/Ipamorelin",
+        "CJC-1295 (with DAC)",
+        "LL-37",
+        "MGF",
+        "VIP",
+        "GHRP-2",
+        "Mazdutide",
+        "GHRP-6",
+        "FOXO4-DRI",
+        "Hexarelin",
+        "Kisspeptin",
+        "HCG",
+        "Dihexa",
+        "Selank/Semax",
+        "Survodutide",
+        "Tesofensine",
+        "Gonadorelin",
+        "Thymalin",
+        "Humanin",
+        "Retatrutide/Cagrilintide",
+        "Semaglutide/Cagrilintide",
+        "IGF-1 DES"
+    ]
+    
     def scrape(self, url: str, **kwargs) -> Optional[ScrapedPage]:
         """Scrape PeptiPrices with structured product data."""
+        # Check if this is a bulk scrape request
+        if kwargs.get('bulk_scrape'):
+            progress_callback = kwargs.get('progress_callback')
+            return self._bulk_scrape(progress_callback)
+        
         response = self.get_page(url)
         if not response:
             return None
@@ -320,6 +387,130 @@ class PeptiPricesScraper(BaseScraper):
         }
         
         return ScrapedPage.from_dict(page_data)
+    
+    def _bulk_scrape(self, progress_callback: Optional[Callable] = None) -> List[ScrapedPage]:
+        """Scrape all products from the product list."""
+        all_results = []
+        base_url = "https://peptiprices.com/products/"
+        total_products = len(self.PRODUCT_LIST)
+        
+        for index, product_name in enumerate(self.PRODUCT_LIST):
+            # Update progress
+            if progress_callback:
+                progress = index / total_products
+                progress_callback(progress, f"Scraping {product_name} ({index + 1}/{total_products})")
+            
+            # Convert product name to URL format
+            product_url = base_url + self._product_name_to_url(product_name)
+            
+            try:
+                # Scrape individual product page
+                response = self.get_page(product_url)
+                if response:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    products = self._extract_product_data(soup)
+                    
+                    page_data = {
+                        'scraped_url': response.url,
+                        'scraped_at': self._get_timestamp(),
+                        'title_content_pairs': self._extract_title_content_pairs(soup),
+                        'product_pricing': products,
+                        'searched_product': product_name
+                    }
+                    
+                    all_results.append(ScrapedPage.from_dict(page_data))
+                
+                # Add delay to avoid overwhelming the server
+                import time
+                time.sleep(1)  # 1 second delay between requests
+                
+            except Exception as e:
+                # Log error but continue with other products
+                print(f"Error scraping {product_name}: {str(e)}")
+                continue
+        
+        # Final progress update
+        if progress_callback:
+            progress_callback(1.0, f"Completed! Scraped {len(all_results)} products.")
+        
+        return all_results
+    
+    def _product_name_to_url(self, product_name: str) -> str:
+        """Convert product name to URL-friendly format."""
+        import re
+        
+        # Handle special cases based on examples
+        url = product_name.lower()
+        
+        # Replace spaces and special characters with hyphens
+        url = re.sub(r'[^\w\-/]', '-', url)
+        url = re.sub(r'-+', '-', url)  # Multiple hyphens to single
+        url = url.strip('-')  # Remove leading/trailing hyphens
+        
+        # Handle specific conversions based on examples
+        if url == 'igf-1-des':
+            return 'igf-1-des'
+        elif url == 'retatrutide-cagrilintide':
+            return 'retatrutide_cagrilintide'  # Use underscore instead of hyphen
+        elif url == 'cjc-1295-with-dac':
+            return 'cjc-1295-with-dac'
+        elif url == 'cjc-1295-no-dac':
+            return 'cjc-1295-no-dac'
+        elif url == 'ipamorelin-cjc-1295-no-dac':
+            return 'ipamorelin-cjc-1295-no-dac'
+        elif url == 'tesamorelin-ipamorelin':
+            return 'tesamorelin-ipamorelin'
+        elif url == 'bpc-157-tb-500':
+            return 'bpc-157-tb-500'
+        elif url == 'selank-semax':
+            return 'selank-semax'
+        elif url == 'semaglutide-cagrilintide':
+            return 'semaglutide_cagrilintide'  # Use underscore instead of hyphen
+        elif url == 'ara-290':
+            return 'ara-290'
+        elif url == '5-amino-1mq':
+            return '5-amino-1mq'
+        elif url == 'foxo4-dri':
+            return 'foxo4-dri'
+        elif url == 'ss-31':
+            return 'ss-31'
+        elif url == 'nad-':  # Handle NAD+ case
+            return 'nad'
+        elif url == 'ghk-cu':
+            return 'ghk-cu'
+        elif url == 'melanotan-1':
+            return 'melanotan-1'
+        elif url == 'melanotan-2':
+            return 'melanotan-2'
+        elif url == 'bacteriostatic-water':
+            return 'bacteriostatic-water'
+        elif url == 'acetic-acid':
+            return 'acetic-acid'
+        elif url == 'glutathione':
+            return 'glutathione'
+        elif url == 'snap-8':
+            return 'snap-8'
+        elif url == 'll-37':
+            return 'll-37'
+        elif url == 'mgf':
+            return 'mgf'
+        elif url == 'vip':
+            return 'vip'
+        elif url == 'ghrp-2':
+            return 'ghrp-2'
+        elif url == 'ghrp-6':
+            return 'ghrp-6'
+        elif url == 'hcg':
+            return 'hcg'
+        elif url == 'kpv':
+            return 'kpv'
+        elif url == 'dsip':
+            return 'dsip'
+        elif url == 'igf-1-lr3':
+            return 'igf-1-lr3'
+        
+        # Default: just return the cleaned URL
+        return url
     
     def _extract_product_data(self, soup: BeautifulSoup) -> List[Dict]:
         """Extract product pricing information."""
