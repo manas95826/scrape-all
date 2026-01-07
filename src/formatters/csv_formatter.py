@@ -3,6 +3,8 @@ CSV formatter for scraped data.
 """
 
 import pandas as pd
+import json
+import os
 from typing import Union, List
 from ..models import ScrapedPage
 from .base import BaseFormatter
@@ -10,6 +12,51 @@ from .base import BaseFormatter
 
 class CSVFormatter(BaseFormatter):
     """Formatter for CSV output."""
+    
+    def __init__(self):
+        self._dosage_categories = None
+    
+    def _load_dosage_categories(self):
+        """Load dosage categories from JSON file."""
+        if self._dosage_categories is None:
+            try:
+                # Get the path to dosage_category.json
+                current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                categories_file = os.path.join(current_dir, 'dosage_category.json')
+                
+                with open(categories_file, 'r', encoding='utf-8') as f:
+                    categories_data = json.load(f)
+                
+                # Create a lookup dictionary
+                self._dosage_categories = {}
+                for item in categories_data:
+                    peptide_name = item['peptide']
+                    self._dosage_categories[peptide_name] = item['categories']
+            except Exception as e:
+                print(f"Warning: Could not load dosage categories: {e}")
+                self._dosage_categories = {}
+        
+        return self._dosage_categories
+    
+    def _get_categories_for_peptide(self, peptide_name: str) -> str:
+        """Get categories for a peptide, returns semicolon-separated string."""
+        categories = self._load_dosage_categories()
+        
+        # Try exact match first
+        if peptide_name in categories:
+            return '; '.join(categories[peptide_name])
+        
+        # Try case-insensitive match
+        for key, cats in categories.items():
+            if key.lower() == peptide_name.lower():
+                return '; '.join(cats)
+        
+        # Try partial match (for variations)
+        for key, cats in categories.items():
+            if peptide_name.lower() in key.lower() or key.lower() in peptide_name.lower():
+                return '; '.join(cats)
+        
+        return ""
     
     def format(self, data: Union[ScrapedPage, List[ScrapedPage]]) -> str:
         """Format data as CSV."""
@@ -96,11 +143,15 @@ class CSVFormatter(BaseFormatter):
         # Extract dosage information
         dosage = page.custom_data.get("dosage", "")
         
+        # Get categories for this peptide
+        categories = self._get_categories_for_peptide(compound_name)
+        
         for product in products:
             for supplier in product.get("suppliers", []):
                 rows.append({
                     "compound_name": compound_name,
                     "dosage": dosage if dosage else "Standard",
+                    "category": categories,
                     "source_url": page.url,
                     "supplier": supplier.get("supplier", ""),
                     "price_current": supplier.get("price_current", ""),
@@ -134,12 +185,16 @@ class CSVFormatter(BaseFormatter):
             # Extract dosage information
             dosage = page.custom_data.get("dosage", "")
             
+            # Get categories for this peptide
+            categories = self._get_categories_for_peptide(compound_name)
+            
             products = page.custom_data.get("product_pricing", [])
             for product in products:
                 for supplier in product.get("suppliers", []):
                     all_rows.append({
                         "compound_name": compound_name,
                         "dosage": dosage if dosage else "Standard",
+                        "category": categories,
                         "source_url": page.url,
                         "supplier": supplier.get("supplier", ""),
                         "price_current": supplier.get("price_current", ""),

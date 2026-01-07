@@ -1,0 +1,70 @@
+[
+  { "peptide": "Retatrutide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Tirzepatide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Semaglutide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Cagrilintide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Mazdutide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Survodutide", "categories": ["GLP-1 Agonists"] },
+  { "peptide": "Retatrutide/Cagrilintide", "categories": ["GLP-1 Agonists", "Blends", "Retatrutide", "Cagrilintide"] },
+  { "peptide": "Semaglutide/Cagrilintide", "categories": ["GLP-1 Agonists", "Blends"] },
+
+  { "peptide": "Tesamorelin", "categories": ["Growth Hormones"] },
+  { "peptide": "Ipamorelin", "categories": ["Growth Hormones"] },
+  { "peptide": "Sermorelin", "categories": ["Growth Hormones"] },
+  { "peptide": "CJC-1295 (No DAC)", "categories": ["Growth Hormones"] },
+  { "peptide": "CJC-1295 (with DAC)", "categories": ["Growth Hormones"] },
+  { "peptide": "GHRP-2", "categories": ["Growth Hormones"] },
+  { "peptide": "GHRP-6", "categories": ["Growth Hormones"] },
+  { "peptide": "Hexarelin", "categories": ["Growth Hormones"] },
+  { "peptide": "Tesamorelin/Ipamorelin", "categories": ["Growth Hormones", "Blends", "Tesamorelin", "Ipamorelin"] },
+
+  { "peptide": "BPC-157", "categories": ["Healing"] },
+  { "peptide": "TB-500", "categories": ["Healing"] },
+  { "peptide": "KPV", "categories": ["Healing"] },
+  { "peptide": "ARA-290", "categories": ["Healing"] },
+  { "peptide": "BPC-157/TB-500", "categories": ["Healing", "Blends", "BPC-157", "TB-500"] },
+
+  { "peptide": "GHK-Cu", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "MOTS-c", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "Epithalon", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "Glutathione", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "NAD+", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "SS-31", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "Thymalin", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "FOXO4-DRI", "categories": ["Anti-aging & Longevity"] },
+  { "peptide": "Humanin", "categories": ["Anti-aging & Longevity"] },
+
+  { "peptide": "Selank", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "Semax", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "SNAP-8", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "VIP", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "Dihexa", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "Tesofensine", "categories": ["Cognitive & Nootropics"] },
+  { "peptide": "Selank/Semax", "categories": ["Cognitive & Nootropics", "Blends", "Selank", "Semax"] },
+
+  { "peptide": "AOD-9604", "categories": ["Muscle Building"] },
+  { "peptide": "IGF-1 LR3", "categories": ["Muscle Building"] },
+  { "peptide": "IGF-1 DES", "categories": ["Muscle Building"] },
+  { "peptide": "MGF", "categories": ["Muscle Building"] },
+  { "peptide": "5-Amino-1MQ", "categories": ["Muscle Building"] },
+
+  { "peptide": "PT-141", "categories": ["Cosmetic & Tanning"] },
+  { "peptide": "Melanotan-1", "categories": ["Cosmetic & Tanning"] },
+  { "peptide": "Melanotan-2", "categories": ["Cosmetic & Tanning"] },
+
+  { "peptide": "Oxytocin", "categories": ["Hormones & Reproductive"] },
+  { "peptide": "Kisspeptin", "categories": ["Hormones & Reproductive"] },
+  { "peptide": "Gonadorelin", "categories": ["Hormones & Reproductive"] },
+  { "peptide": "HCG", "categories": ["Hormones & Reproductive"] },
+
+  { "peptide": "LL-37", "categories": ["Immune & Defense"] },
+  { "peptide": "Thymosin Alpha-1", "categories": ["Anti-aging & Longevity", "Immune & Defense"] },
+
+  { "peptide": "DSIP", "categories": ["Sleep & Recovery"] },
+
+  { "peptide": "KLOW", "categories": ["Blends", "Healing", "Anti-aging & Longevity", "GHK-Cu", "BPC-157", "TB-500", "KPV"] },
+  { "peptide": "GLOW", "categories": ["Blends", "Healing", "Anti-aging & Longevity", "GHK-Cu", "BPC-157", "TB-500", "KPV"] },
+
+  { "peptide": "Bacteriostatic Water", "categories": ["Accessories"] },
+  { "peptide": "Acetic Acid", "categories": ["Accessories"] }
+]
