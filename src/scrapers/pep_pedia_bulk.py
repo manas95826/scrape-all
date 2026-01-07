@@ -17,7 +17,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from .base import BaseScraper
 from ..models import ScrapedPage
-from ..utils.content_categorizer import ContentCategorizer
 
 
 class PepPediaBulkScraper(BaseScraper):
@@ -90,9 +89,8 @@ class PepPediaBulkScraper(BaseScraper):
         "Wolverine Stack"
     ]
     
-    def __init__(self, delay: float = 1.0, openai_api_key: Optional[str] = None):
+    def __init__(self, delay: float = 1.0):
         super().__init__(delay)
-        self.categorizer = ContentCategorizer(openai_api_key) if openai_api_key else None
         self.driver = None
     
     def _init_driver(self):
@@ -183,7 +181,7 @@ class PepPediaBulkScraper(BaseScraper):
         return ScrapedPage.from_dict(page_data)
     
     def scrape_with_toggles(self, url: str, **kwargs) -> Optional[ScrapedPage]:
-        """Scrape Pep-Pedia with JavaScript toggle handling for oral/injectable routes."""
+        """Scrape Pep-Pedia with JavaScript toggle handling for multiple administration routes."""
         driver = self._init_driver()
         if not driver:
             print("⚠️  WebDriver initialization failed, falling back to regular scraping")
@@ -201,70 +199,73 @@ class PepPediaBulkScraper(BaseScraper):
             
             route_content = {}
             
-            # Step 1: Get initial content (likely injectable)
+            # Define all possible routes to check
+            all_routes = ['oral', 'injectable', 'nasal', 'topical']
+            
+            # Step 1: Get initial content (detect what's currently active)
             print("📄 Extracting initial content...")
             initial_source = driver.page_source
             initial_soup = BeautifulSoup(initial_source, 'html.parser')
             initial_content = self._extract_title_content_pairs(initial_soup)
             
-            # Step 2: Try to detect if this is injectable content
-            is_initial_injectable = self._detect_injectable_content(initial_content)
-            print(f"🔍 Initial content appears to be: {'INJECTABLE' if is_initial_injectable else 'ORAL'}")
+            # Step 2: Detect what type of content this is
+            detected_route = self._detect_content_route(initial_content)
+            print(f"🔍 Initial content appears to be: {detected_route.upper()}")
             
-            if is_initial_injectable:
+            if detected_route in all_routes:
+                route_content[detected_route] = initial_content
+                print(f"✅ Found {len(initial_content)} {detected_route} content sections")
+            else:
+                # Default to injectable if detection fails
                 route_content['injectable'] = initial_content
-                print(f"✅ Found {len(initial_content)} injectable content sections")
-            else:
-                route_content['oral'] = initial_content
-                print(f"✅ Found {len(initial_content)} oral content sections")
+                print(f"✅ Found {len(initial_content)} injectable content sections (default)")
             
-            # Step 3: Try to toggle and get the other content
-            print("🔄 Attempting to toggle to get alternate route content...")
-            toggle_success = self._toggle_to_route(driver, "oral" if is_initial_injectable else "injectable")
+            # Step 3: Try to toggle to all other available routes
+            print("🔄 Checking for additional administration routes...")
             
-            if toggle_success:
-                time.sleep(3)  # Wait for content to fully load
-                print("✅ Toggle successful, extracting alternate content...")
+            for target_route in all_routes:
+                if target_route == detected_route:
+                    continue  # Skip the route we already have
                 
-                alternate_source = driver.page_source
-                alternate_soup = BeautifulSoup(alternate_source, 'html.parser')
-                alternate_content = self._extract_title_content_pairs(alternate_soup)
+                print(f"🔄 Attempting to toggle to {target_route}...")
+                toggle_success = self._toggle_to_route(driver, target_route)
                 
-                # Check if content actually changed
-                if self._content_is_different(initial_content, alternate_content):
-                    target_route = 'oral' if is_initial_injectable else 'injectable'
-                    route_content[target_route] = alternate_content
-                    print(f"✅ Found {len(alternate_content)} {target_route} content sections")
-                else:
-                    print("⚠️  Toggle didn't change content - attempting intelligent content separation...")
+                if toggle_success:
+                    time.sleep(3)  # Wait for content to fully load
+                    print(f"✅ Toggle successful, extracting {target_route} content...")
                     
-                    # If toggle didn't work, try to intelligently separate content
-                    separated_content = self._intelligently_separate_content(initial_content, is_initial_injectable)
-                    if separated_content:
-                        route_content.update(separated_content)
-                        print(f"✅ Separated content: {len(separated_content.get('oral', []))} oral, {len(separated_content.get('injectable', []))} injectable")
+                    alternate_source = driver.page_source
+                    alternate_soup = BeautifulSoup(alternate_source, 'html.parser')
+                    alternate_content = self._extract_title_content_pairs(alternate_soup)
+                    
+                    # Check if content actually changed
+                    if self._content_is_different(initial_content, alternate_content):
+                        route_content[target_route] = alternate_content
+                        print(f"✅ Found {len(alternate_content)} {target_route} content sections")
+                        initial_content = alternate_content  # Update for next comparison
+                        detected_route = target_route
                     else:
-                        # Fallback: assign content to both routes with appropriate filtering
-                        filtered_content = self._filter_content_by_route(initial_content, is_initial_injectable)
-                        route_content.update(filtered_content)
-                        print(f"🔄 Applied route-specific filtering")
-            else:
-                print("⚠️  Toggle failed, using intelligent content separation...")
-                # Try to separate content from what we have
-                separated_content = self._intelligently_separate_content(initial_content, is_initial_injectable)
+                        print(f"⚠️  {target_route} toggle didn't change content - skipping")
+                else:
+                    print(f"⚠️  No {target_route} toggle found - skipping")
+            
+            # Step 4: If we only have one route, try intelligent separation
+            if len(route_content) == 1:
+                print("⚠️  Only one route found, attempting intelligent content separation...")
+                existing_route = list(route_content.keys())[0]
+                existing_content = route_content[existing_route]
+                
+                separated_content = self._intelligently_separate_content_multi_route(existing_content)
                 if separated_content:
                     route_content.update(separated_content)
-                    print(f"✅ Separated content: {len(separated_content.get('oral', []))} oral, {len(separated_content.get('injectable', []))} injectable")
+                    print(f"✅ Separated content into multiple routes")
                 else:
-                    # Last resort: assign to both with filtering
-                    filtered_content = self._filter_content_by_route(initial_content, is_initial_injectable)
-                    route_content.update(filtered_content)
+                    print(f"🔄 Keeping single route: {existing_route}")
             
-            # Ensure we have both routes
-            if 'oral' not in route_content:
-                route_content['oral'] = []
-            if 'injectable' not in route_content:
-                route_content['injectable'] = []
+            # Ensure all routes exist (even if empty)
+            for route in all_routes:
+                if route not in route_content:
+                    route_content[route] = []
             
             # Extract peptide info per route
             peptide_info = {}
@@ -277,46 +278,21 @@ class PepPediaBulkScraper(BaseScraper):
                     peptide_info[route] = self._extract_peptide_info(route_soup)
                     print(f"🧪 Extracted peptide info for {route} route")
             
-            # Categorize content if OpenAI is available
-            categorized_content = {}
-            if self.categorizer and route_content:
-                print("🤖 Categorizing content with AI...")
-                # Combine all route content into single content
-                all_content = []
-                for route, content in route_content.items():
-                    route_content_text = "\n\n".join([f"{pair['title']}\n{pair['content']}" for pair in content])
-                    all_content.append(f"=== {route.upper()} ===\n{route_content_text}")
-                
-                full_content = "\n\n".join(all_content)
-                
-                try:
-                    page_title = driver.find_element(By.TAG_NAME, 'h1').get_attribute('textContent') if driver.find_elements(By.TAG_NAME, 'h1') else ""
-                    
-                    categorized_content = self.categorizer.categorize_content(
-                        title=page_title.strip(),
-                        content=full_content,
-                        url=url
-                    )
-                    print("✅ Content categorized successfully")
-                except Exception as e:
-                    print(f"⚠️  Content categorization failed: {e}")
-            
-            # Create final page data
+            # Create final page data (no AI categorization)
             page_data = {
                 'scraped_url': url,
                 'scraped_at': self._get_timestamp(),
-                'content_by_route': {
-                    'oral': route_content.get('oral', []),
-                    'injectable': route_content.get('injectable', [])
-                },
+                'content_by_route': route_content,
                 'peptide_info': peptide_info,
-                'categorized_content': categorized_content
+                'categorized_content': {}  # Empty - will be filled during CSV processing
             }
             
             # Print summary
-            oral_count = len(route_content.get('oral', []))
-            injectable_count = len(route_content.get('injectable', []))
-            print(f"📊 Summary: {oral_count} oral sections, {injectable_count} injectable sections")
+            print(f"📊 Summary:")
+            for route in all_routes:
+                count = len(route_content.get(route, []))
+                if count > 0:
+                    print(f"   {route.capitalize()}: {count} sections")
             
             return ScrapedPage.from_dict(page_data)
             
@@ -329,96 +305,75 @@ class PepPediaBulkScraper(BaseScraper):
             return self.scrape(url, **kwargs)
     
     def _toggle_to_route(self, driver, target_route: str) -> bool:
-        """Try to toggle to the specified route (oral/injectable) with enhanced detection."""
+        """Try to toggle to the specified route (oral/injectable/nasal/topical) with enhanced detection."""
         try:
             # Wait for page to be fully loaded
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
-            # Multiple strategies to find toggle elements
-            toggle_strategies = [
-                # Strategy 1: Direct text matching
+            # Multiple strategies to find toggle elements for all routes
+            toggle_selectors = [
+                # Strategy 1: Direct button text matching (case-insensitive)
                 f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
                 f"//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
                 f"//input[contains(@value, '{target_route}')]",
                 f"//label[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
                 
                 # Strategy 2: Class-based detection
-                f"//*[contains(@class, '{target_route}') and (self::button or self::a or self::div or self::li)]",
-                f"//*[contains(@class, 'tab') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
-                f"//*[contains(@class, 'toggle') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
-                
-                # Strategy 3: Data attributes
+                f"//*[contains(@class, '{target_route}') and (self::button or self::a or self::div)]",
                 f"//*[contains(@data-route, '{target_route}')]",
                 f"//*[contains(@data-tab, '{target_route}')]",
-                f"//*[contains(@data-toggle, '{target_route}')]",
                 
-                # Strategy 4: Role-based detection
-                f"//*[@role='tab' and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
-                f"//*[@role='button' and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                # Strategy 3: Common toggle patterns
+                f"//button[contains(@class, 'tab') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                f"//div[contains(@class, 'toggle') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                f"//span[contains(@class, 'tab') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
                 
-                # Strategy 5: Input radio/checkbox detection
-                f"//input[@type='radio' and contains(@id, '{target_route}')]",
-                f"//input[@type='checkbox' and contains(@id, '{target_route}')]",
-                f"//input[@type='radio' and contains(@name, '{target_route}')]",
-                f"//input[@type='checkbox' and contains(@name, '{target_route}')]",
+                # Strategy 4: Radio button groups
+                f"//input[@type='radio' and @value='{target_route}']/..",
+                f"//input[@type='radio' and contains(@name, 'route') and @value='{target_route}']/..",
+                
+                # Strategy 5: Select dropdown options
+                f"//select[contains(@name, 'route')]//option[@value='{target_route}']",
+                f"//select[contains(@id, 'route')]//option[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                
+                # Strategy 6: Navigation elements
+                f"//nav//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                f"//div[contains(@class, 'nav')]//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                
+                # Strategy 7: Generic clickable elements
+                f"//*[contains(@class, 'btn') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                f"//*[contains(@class, 'button') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                f"//*[contains(@role, 'tab') and contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
+                
+                # Strategy 8: Form elements
+                f"//input[contains(@id, '{target_route}')]",
+                f"//button[contains(@id, '{target_route}')]",
+                f"//div[contains(@id, '{target_route}') and (self::button or self::a or @onclick)]"
             ]
             
-            for strategy in toggle_strategies:
+            for selector in toggle_selectors:
                 try:
-                    elements = driver.find_elements(By.XPATH, strategy)
-                    for element in elements:
-                        if element.is_displayed() and element.is_enabled():
-                            # Scroll element into view
-                            driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                    elements = driver.find_elements("xpath", selector)
+                    for elem in elements:
+                        if elem.is_displayed() and elem.is_enabled():
+                            # Scroll into view and click
+                            driver.execute_script("arguments[0].scrollIntoView(true);", elem)
                             time.sleep(0.5)
                             
-                            # Try to click the element
+                            # Try different click methods
                             try:
-                                element.click()
-                                print(f"✅ Successfully clicked {target_route} toggle using strategy: {strategy}")
-                                
-                                # Wait for content to change after toggle
-                                time.sleep(2)
-                                
-                                # Wait for any loading indicators to disappear
+                                elem.click()
+                            except Exception:
                                 try:
-                                    WebDriverWait(driver, 5).until_not(
-                                        EC.presence_of_element_located((By.XPATH, "//*[contains(@class, 'loading') or contains(@class, 'spinner')]"))
-                                    )
-                                except:
-                                    pass  # No loading indicator found, continue
-                                
-                                return True
-                            except Exception as click_error:
-                                # Try JavaScript click if regular click fails
-                                try:
-                                    driver.execute_script("arguments[0].click();", element)
-                                    print(f"✅ Successfully clicked {target_route} toggle using JavaScript: {strategy}")
-                                    time.sleep(2)
-                                    return True
-                                except:
+                                    driver.execute_script("arguments[0].click();", elem)
+                                except Exception:
                                     continue
-                except Exception as e:
-                    continue
-            
-            # If no direct toggle found, try to find and click parent elements
-            parent_strategies = [
-                f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]/ancestor::*[self::button or self::a or self::div][1]",
-                f"//*[contains(@class, 'tab')]/ancestor::*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_route}')]",
-            ]
-            
-            for strategy in parent_strategies:
-                try:
-                    elements = driver.find_elements(By.XPATH, strategy)
-                    for element in elements:
-                        if element.is_displayed() and element.is_enabled():
-                            element.click()
-                            print(f"✅ Successfully clicked {target_route} parent toggle: {strategy}")
-                            time.sleep(2)
+                            
+                            print(f"✅ Successfully clicked {target_route} toggle using: {selector}")
                             return True
-                except:
+                except Exception:
                     continue
             
             print(f"⚠️  No {target_route} toggle found")
@@ -428,15 +383,63 @@ class PepPediaBulkScraper(BaseScraper):
             print(f"❌ Error toggling to {target_route}: {e}")
             return False
     
-    def _scrape_current_route(self, driver, route: str) -> List[Dict[str, str]]:
-        """Scrape content from the current page state."""
-        try:
-            page_source = driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            return self._extract_title_content_pairs(soup)
-        except Exception as e:
-            print(f"Error scraping current route {route}: {e}")
-            return []
+    def _extract_title_content_pairs(self, soup: BeautifulSoup) -> List[Dict[str, str]]:
+        """Extract title-content pairs with comprehensive strategies."""
+        pairs = []
+        
+        # Strategy 1: Extract by headings
+        pairs.extend(self._extract_by_headings(soup))
+        
+        # Strategy 2: Extract by containers
+        pairs.extend(self._extract_by_containers(soup))
+        
+        # Strategy 3: Extract all meaningful content
+        pairs.extend(self._extract_all_content_sections(soup))
+        
+        # Deduplicate and return
+        seen_titles = set()
+        unique_pairs = []
+        
+        for pair in pairs:
+            title = pair.get('title', '')
+            if title and title not in seen_titles:
+                seen_titles.add(title)
+                unique_pairs.append(pair)
+        
+        return unique_pairs
+    
+    def _extract_by_headings(self, soup: BeautifulSoup) -> List[Dict[str, str]]:
+        """Extract content using heading-based structure."""
+        pairs = []
+        
+        # Find all heading tags
+        headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        
+        for heading in headings:
+            title = heading.get_text(strip=True)
+            if not title or len(title) < 3:
+                continue
+            
+            # Get content until next heading
+            content_elements = []
+            next_element = heading.next_sibling
+            
+            while next_element:
+                if next_element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    break
+                if next_element.name and next_element.get_text(strip=True):
+                    content_elements.append(next_element)
+                next_element = next_element.next_sibling
+            
+            if content_elements:
+                content = '\n'.join([elem.get_text(strip=True) for elem in content_elements])
+                if content and len(content) > 20:
+                    pairs.append({
+                        'title': title,
+                        'content': content
+                    })
+        
+        return pairs
     
     def _bulk_scrape(self, progress_callback: Optional[Callable] = None) -> List[ScrapedPage]:
         """Scrape all products from the product list."""
@@ -1014,44 +1017,117 @@ class PepPediaBulkScraper(BaseScraper):
         
         return pairs
     
-    def _detect_injectable_content(self, content: List[Dict[str, str]]) -> bool:
-        """Detect if content is primarily injectable-focused."""
+    def _detect_content_route(self, content: List[Dict[str, str]]) -> str:
+        """Detect which administration route the content belongs to."""
         if not content:
-            return False
+            return 'injectable'  # Default
         
         # Combine all content text for analysis
         all_text = " ".join([c.get('content', '').lower() for c in content])
         all_titles = " ".join([c.get('title', '').lower() for c in content])
         
-        # Injectable-specific indicators
-        injectable_indicators = [
-            'inject', 'injection', 'subcutaneous', 'subq', 'intramuscular',
-            'reconstitute', 'bacteriostatic water', 'syringe', 'needle',
-            'injection site', 'belly thigh arm', 'near injury',
-            'rotate injection sites', 'sterile injection'
+        # Route-specific indicators
+        route_indicators = {
+            'injectable': [
+                'inject', 'injection', 'subcutaneous', 'subq', 'intramuscular',
+                'reconstitute', 'bacteriostatic water', 'syringe', 'needle',
+                'injection site', 'belly thigh arm', 'near injury',
+                'rotate injection sites', 'sterile injection'
+            ],
+            'oral': [
+                'oral', 'capsule', 'tablet', 'sublingual', 'buccal',
+                'swallow', 'with food', 'without food', 'gastric absorption',
+                'bioavailability oral', 'first pass metabolism', 'digestive'
+            ],
+            'nasal': [
+                'nasal', 'nose', 'spray', 'intranasal', 'nasal spray',
+                'nasal administration', 'nasal delivery', 'nasal mucosa',
+                'nasal absorption', 'nose drops'
+            ],
+            'topical': [
+                'topical', 'cream', 'gel', 'lotion', 'ointment', 'patch',
+                'skin', 'dermal', 'transdermal', 'apply to skin',
+                'topical application', 'skin absorption', 'surface'
+            ]
+        }
+        
+        # Score each route
+        route_scores = {}
+        for route, indicators in route_indicators.items():
+            content_score = sum(1 for indicator in indicators if indicator in all_text)
+            title_score = sum(1 for indicator in indicators if indicator in all_titles)
+            route_scores[route] = content_score + (title_score * 2)
+        
+        print(f"  📊 Route scores: {route_scores}")
+        
+        # Return the route with highest score
+        if route_scores:
+            best_route = max(route_scores, key=route_scores.get)
+            if route_scores[best_route] > 0:
+                return best_route
+        
+        return 'injectable'  # Default if no indicators found
+    
+    def _intelligently_separate_content_multi_route(self, content: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
+        """Intelligently separate content into multiple administration routes."""
+        if not content:
+            return {'oral': [], 'injectable': [], 'nasal': [], 'topical': []}
+        
+        route_content = {
+            'oral': [],
+            'injectable': [],
+            'nasal': [],
+            'topical': []
+        }
+        
+        for item in content:
+            title = item.get('title', '').lower()
+            content_text = item.get('content', '').lower()
+            
+            # Route-specific classification
+            classified_route = self._classify_content_route(title, content_text)
+            route_content[classified_route].append(item)
+        
+        return route_content
+    
+    def _classify_content_route(self, title: str, content: str) -> str:
+        """Classify content into a specific administration route."""
+        combined_text = f"{title} {content}"
+        
+        # Check each route in order of specificity
+        if self._is_nasal_section(title, content):
+            return 'nasal'
+        elif self._is_topical_section(title, content):
+            return 'topical'
+        elif self._is_injectable_section(title, content):
+            return 'injectable'
+        elif self._is_oral_section(title, content):
+            return 'oral'
+        else:
+            # Default to injectable for ambiguous content
+            return 'injectable'
+    
+    def _is_nasal_section(self, title: str, content: str) -> bool:
+        """Determine if a section is nasal-specific."""
+        nasal_keywords = [
+            'nasal', 'nose', 'spray', 'intranasal', 'nasal spray',
+            'nasal administration', 'nasal delivery', 'nasal mucosa',
+            'nasal absorption', 'nose drops'
         ]
         
-        # Oral-specific indicators  
-        oral_indicators = [
-            'oral', 'capsule', 'tablet', 'sublingual', 'buccal',
-            'swallow', 'with food', 'without food', 'gastric absorption',
-            'bioavailability oral', 'first pass metabolism'
+        combined_text = f"{title} {content}"
+        return any(keyword in combined_text for keyword in nasal_keywords)
+    
+    def _is_topical_section(self, title: str, content: str) -> bool:
+        """Determine if a section is topical-specific."""
+        topical_keywords = [
+            'topical', 'cream', 'gel', 'lotion', 'ointment', 'patch',
+            'skin', 'dermal', 'transdermal', 'apply to skin',
+            'topical application', 'skin absorption', 'surface'
         ]
         
-        # Count indicators
-        injectable_count = sum(1 for indicator in injectable_indicators if indicator in all_text)
-        oral_count = sum(1 for indicator in oral_indicators if indicator in all_text)
-        
-        # Also check titles
-        injectable_title_count = sum(1 for indicator in injectable_indicators if indicator in all_titles)
-        oral_title_count = sum(1 for indicator in oral_indicators if indicator in all_titles)
-        
-        injectable_score = injectable_count + (injectable_title_count * 2)
-        oral_score = oral_count + (oral_title_count * 2)
-        
-        print(f"  📊 Content analysis: Injectable indicators={injectable_score}, Oral indicators={oral_score}")
-        
-        return injectable_score > oral_score
+        combined_text = f"{title} {content}"
+        return any(keyword in combined_text for keyword in topical_keywords)
     
     def _content_is_different(self, content1: List[Dict[str, str]], content2: List[Dict[str, str]]) -> bool:
         """Check if two content lists are actually different."""
